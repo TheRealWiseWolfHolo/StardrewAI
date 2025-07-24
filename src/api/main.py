@@ -1,6 +1,7 @@
 """FastAPI backend for the Stardew Valley AI chat agent."""
 
 import logging
+import time
 from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request
@@ -115,7 +116,7 @@ async def chat(message: ChatMessage) -> ChatResponse:
                 )
         
         # Get response from agent
-        response = agent.chat(message.message)
+        response = agent.process_message(message=message.message, mode=message.mode) # Corrected: use process_message
         
         return ChatResponse(
             response=response,
