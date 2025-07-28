@@ -13,6 +13,7 @@ from langchain_openai import ChatOpenAI
 
 from config.settings import settings
 from src.rag.knowledge_base import StardewRAGSystem
+from src.planner.crop_planner import CropPlanner # Add this import
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,7 +31,8 @@ class StardewAgent:
     def __init__(self, mode: AgentMode = AgentMode.HINTS):
         self.mode = mode
         self.rag_system = StardewRAGSystem()
-        
+        self.crop_planner = CropPlanner(self.rag_system) # Instantiate CropPlanner
+
         # Initialize OpenAI LLM
         self.llm = ChatOpenAI(
             model=settings.openai_model,
@@ -74,95 +76,72 @@ class StardewAgent:
                 name="get_specific_info",
                 description="Get detailed information about a specific topic in Stardew Valley (crops, animals, characters, locations, etc.).",
                 func=self._get_specific_info_tool
+            ),
+            Tool( # New tool for crop planning
+                name="plan_crop_farming",
+                description="Plan a crop farming strategy, including land size, seeds, fertilizer, and startup funds for a target yield of a specific crop in a given season. Input should be a string like 'crop_name, target_yield, season'.",
+                func=self._plan_crop_tool # This will now call the new method
             )
         ]
         return tools
-    
+
     def _search_knowledge_tool(self, query: str) -> str:
-        """Tool function to search the knowledge base."""
+        """Helper to search knowledge base."""
+        return self.rag_system.get_context_for_query(query)
+
+    def _get_specific_info_tool(self, query: str) -> str:
+        """Helper to get specific info."""
+        # This could be enhanced to parse query for specific entities more robustly
+        return self.rag_system.get_context_for_query(query)
+
+    def _plan_crop_tool(self, query: str) -> str:
+        """
+        Delegates crop planning to the CropPlanner instance.
+        Query format: "crop_name, target_yield, season"
+        Example: "wheat, 100, summer"
+        """
         try:
-            results = self.rag_system.search(query, n_results=3)
-            if not results:
-                return "No specific information found in the knowledge base."
+            parts = [p.strip() for p in query.split(',')]
+            if len(parts) != 3:
+                return "Invalid query format for crop planning. Please use 'crop_name, target_yield, season'."
+
+            crop_name, target_yield_str, season = parts
+            target_yield = int(target_yield_str)
             
-            # Format results based on mode
-            if self.mode == AgentMode.HINTS:
-                # Provide concise, hint-like information
-                context = results[0]['content'][:200] + "..."
-                return f"Hint: {context}"
-            else:
-                # Provide detailed information
-                context_parts = []
-                for result in results:
-                    title = result['metadata'].get('title', 'Unknown')
-                    content = result['content'][:300]
-                    context_parts.append(f"From {title}: {content}")
-                return "\n\n".join(context_parts)
-                
+            return self.crop_planner.plan_crop_farming(crop_name, target_yield, season)
+
+        except ValueError:
+            return "Invalid target yield. Please provide a valid number."
         except Exception as e:
-            logger.error(f"Error in search tool: {str(e)}")
-            return "Sorry, I couldn't retrieve information at the moment."
-    
-    def _get_specific_info_tool(self, topic: str) -> str:
-        """Tool function to get specific information about a topic."""
-        try:
-            # Search for specific information
-            enhanced_query = f"detailed information about {topic} in Stardew Valley"
-            results = self.rag_system.search(enhanced_query, n_results=2)
+            logger.error(f"Error in _plan_crop_tool: {e}")
+            return f"An error occurred while planning your crop: {str(e)}"
             
-            if not results:
-                return f"No detailed information found about {topic}."
-            
-            # Return appropriate level of detail based on mode
-            if self.mode == AgentMode.HINTS:
-                return f"Quick tip about {topic}: {results[0]['content'][:150]}..."
-            else:
-                context = self.rag_system.get_context_for_query(enhanced_query, max_chunks=2)
-                return context
-                
-        except Exception as e:
-            logger.error(f"Error in specific info tool: {str(e)}")
-            return f"Sorry, I couldn't get specific information about {topic}."
-    
+    def set_mode(self, new_mode: AgentMode):
+        """
+        Sets the agent's operating mode and recreates the agent executor.
+        """
+        if self.mode != new_mode:
+            self.mode = new_mode
+            logger.info(f"Agent mode set to {self.mode.value}")
+            # Recreate agent with new mode
+            self.agent = self._create_agent()
+            self.agent_executor = AgentExecutor(
+                agent=self.agent,
+                tools=self.tools,
+                memory=self.memory,
+                verbose=settings.debug,
+                max_iterations=settings.max_response_length // 100, # Adjust max iterations based on response length
+                early_stopping_method="generate"
+            )
+        
     def _create_agent(self):
         """Create the LangChain agent with appropriate prompts."""
         if self.mode == AgentMode.HINTS:
-            system_message = """You are a helpful Stardew Valley assistant that provides HINTS and SUBTLE GUIDANCE.
-
-Your role:
-- Give players gentle nudges in the right direction
-- Avoid giving away complete solutions unless specifically asked
-- Keep responses concise and encouraging
-- Let players discover and learn on their own
-- Use phrases like "You might want to try...", "Consider...", "Have you thought about..."
-
-Guidelines:
-- Keep responses under 200 words
-- Focus on one main hint per response
-- Ask follow-up questions to guide discovery
-- Avoid spoilers about late-game content
-- Encourage experimentation and exploration
-
-When players ask questions, use your tools to find relevant information, then present it as a helpful hint rather than a complete answer."""
+            system_message = """You are a helpful Stardew Valley assistant that provides HINTS and SUBTLE GUIDANCE.\n\nYour role:\n- Give players gentle nudges in the right direction\n- Avoid giving away complete solutions unless specifically asked\n- Keep responses concise and encouraging\n- Let players discover and learn on their own\n- Use phrases like "You might want to try...", "Consider...", "Have you thought about..."\n\nGuidelines:\n- Keep responses under 200 words\n- Focus on one main hint per response\n- Ask follow-up questions to guide discovery\n- Avoid spoilers about late-game content\n- Encourage experimentation and exploration\n\nWhen players ask questions, use your tools to find relevant information, then present it as a helpful hint rather than a complete answer."""
 
         else:  # WALKTHROUGH mode
-            system_message = """You are a comprehensive Stardew Valley guide that provides DETAILED WALKTHROUGHS and COMPLETE SOLUTIONS.
-
-Your role:
-- Provide step-by-step instructions
-- Give complete and detailed explanations
-- Include all relevant information and context
-- Be thorough and systematic in your responses
-- Help players achieve their goals efficiently
-
-Guidelines:
-- Provide comprehensive answers with specific steps
-- Include relevant numbers, timings, and requirements
-- Give complete item lists and resource requirements
-- Explain the reasoning behind strategies
-- Cover multiple approaches when applicable
-
-When players ask questions, use your tools to gather comprehensive information and provide detailed, actionable guidance."""
+            system_message = """You are a comprehensive Stardew Valley guide that provides DETAILED WALKTHROUGHS and COMPLETE SOLUTIONS.\n\nYour role:\n- Provide step-by-step instructions\n- Give complete and detailed explanations\n- Include all relevant information and context\n- Be thorough and systematic in your responses\n- Help players achieve their goals efficiently\n\nGuidelines:\n- Provide comprehensive answers with specific steps\n- Include relevant numbers, timings, and requirements\n- Give complete item lists and resource requirements\n- Explain the reasoning behind strategies\n- Cover multiple approaches when applicable\n\nWhen players ask questions, use your tools to gather comprehensive information and provide detailed, actionable guidance.\nYour user has asked for a crop planning feature. When a user asks for a plan for a specific crop, quantity, and season, use the `plan_crop_farming` tool.\nThe `plan_crop_farming` tool input format is 'crop_name, target_yield, season'. For example, if the user asks "plan to grow 100 wheat in summer", you should call the tool with `plan_crop_farming(wheat, 100, summer)`.
+"""
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_message),
@@ -170,45 +149,32 @@ When players ask questions, use your tools to gather comprehensive information a
             ("human", "{input}"),
             MessagesPlaceholder(variable_name="agent_scratchpad")
         ])
+
+        return create_openai_functions_agent(self.llm, self.tools, prompt)
+
+    def process_message(self, message: str, mode: Optional[str] = None) -> str:
+        """Process a user message and return the agent's response."""
+        if mode and mode.lower() in [m.value for m in AgentMode]:
+            self.mode = AgentMode(mode.lower())
+            logger.info(f"Agent mode set to {self.mode.value}")
         
-        return create_openai_functions_agent(
-            llm=self.llm,
+        # Recreate agent with new mode if it changed
+        self.agent = self._create_agent()
+        self.agent_executor = AgentExecutor(
+            agent=self.agent,
             tools=self.tools,
-            prompt=prompt
+            memory=self.memory,
+            verbose=settings.debug,
+            max_iterations=settings.max_response_length // 100, # Adjust max iterations based on response length
+            early_stopping_method="generate"
         )
-    
-    def set_mode(self, mode: AgentMode):
-        """Change the agent's response mode."""
-        if self.mode != mode:
-            self.mode = mode
-            logger.info(f"Agent mode changed to: {mode.value}")
-            # Recreate agent with new mode
-            self.agent = self._create_agent()
-            self.agent_executor = AgentExecutor(
-                agent=self.agent,
-                tools=self.tools,
-                memory=self.memory,
-                verbose=True,
-                max_iterations=3,
-                early_stopping_method="generate"
-            )
-    
-    def chat(self, message: str) -> str:
-        """Process a chat message and return a response."""
+        
         try:
-            # Add mode context to the message
-            mode_context = f"[{self.mode.value.upper()} MODE] "
-            enhanced_message = mode_context + message
-            
-            response = self.agent_executor.invoke({
-                "input": enhanced_message
-            })
-            
-            return response.get("output", "I'm sorry, I couldn't process your request.")
-            
+            response = self.agent_executor.invoke({"input": message})
+            return response["output"]
         except Exception as e:
-            logger.error(f"Error processing chat message: {str(e)}")
-            return "I encountered an error while processing your request. Please try again."
+            logger.error(f"Error processing message: {e}")
+            return "I apologize, but I encountered an error while processing your request. Please try again or rephrase your query."
     
     def get_conversation_history(self) -> List[BaseMessage]:
         """Get the current conversation history."""
