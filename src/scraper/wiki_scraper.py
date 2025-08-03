@@ -46,7 +46,8 @@ class StardewWikiScraper:
         
         self.seed_pages = [
             "/Stardew_Valley_Wiki", "/Crops", "/Villagers", "/Fishing", 
-            "/Mining", "/Community_Center", "/Ginger_Island", "/Monsters"
+            "/Mining", "/Community_Center", "/Ginger_Island", "/Monsters",
+            "/Quests", "/Achievements", "/Cooking", "/Crafting", "/Foraging"
         ]
 
     def get_page_content_and_links(self, url: str) -> Optional[Tuple[Dict, Set[str]]]:

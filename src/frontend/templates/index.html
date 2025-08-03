@@ -6,188 +6,108 @@
     <title>Stardew Valley AI Assistant</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/marked/lib/marked.min.js" rel="stylesheet">
     <style>
         body {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-        
         .chat-container {
-            background: white;
-            border-radius: 15px;
+            background: white; border-radius: 15px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.2);
             overflow: hidden;
         }
-        
         .chat-header {
             background: linear-gradient(45deg, #4CAF50, #45a049);
-            color: white;
-            padding: 20px;
-            text-align: center;
+            color: white; padding: 20px; text-align: center;
         }
-        
         .mode-selector {
-            background: rgba(255,255,255,0.1);
-            border-radius: 10px;
-            padding: 10px;
-            margin-top: 10px;
+            background: rgba(255,255,255,0.1); border-radius: 10px;
+            padding: 10px; margin-top: 10px;
         }
-        
         .mode-btn {
-            background: rgba(255,255,255,0.2);
-            border: 1px solid rgba(255,255,255,0.3);
-            color: white;
-            border-radius: 8px;
-            padding: 8px 16px;
-            margin: 0 5px;
-            transition: all 0.3s;
+            background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3);
+            color: white; border-radius: 8px; padding: 8px 16px;
+            margin: 0 5px; transition: all 0.3s;
         }
-        
-        .mode-btn.active {
-            background: rgba(255,255,255,0.8);
-            color: #4CAF50;
-        }
-        
-        .mode-btn:hover {
-            background: rgba(255,255,255,0.4);
-        }
-        
+        .mode-btn.active { background: rgba(255,255,255,0.8); color: #4CAF50; }
+        .mode-btn:hover { background: rgba(255,255,255,0.4); }
         .chat-messages {
-            height: 500px;
-            overflow-y: auto;
-            padding: 20px;
+            height: 500px; overflow-y: auto; padding: 20px;
             background: #f8f9fa;
         }
-        
-        .message {
-            margin-bottom: 20px;
-            animation: fadeIn 0.3s ease-in;
-        }
-        
+        .message { margin-bottom: 20px; animation: fadeIn 0.3s ease-in; }
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        
-        .message.user {
-            text-align: right;
-        }
-        
-        .message.assistant {
-            text-align: left;
-        }
-        
+        .message.user { text-align: right; }
+        .message.assistant { text-align: left; }
         .message-bubble {
-            display: inline-block;
-            max-width: 70%;
-            padding: 15px;
-            border-radius: 20px;
-            word-wrap: break-word;
+            display: inline-block; max-width: 85%;
+            padding: 15px; border-radius: 20px;
+            word-wrap: break-word; text-align: left;
         }
-        
         .user .message-bubble {
-            background: #007bff;
-            color: white;
-            border-bottom-right-radius: 5px;
+            background: #007bff; color: white; border-bottom-right-radius: 5px;
         }
-        
         .assistant .message-bubble {
-            background: white;
-            color: #333;
-            border: 1px solid #e0e0e0;
-            border-bottom-left-radius: 5px;
+            background: white; color: #333;
+            border: 1px solid #e0e0e0; border-bottom-left-radius: 5px;
         }
-        
-        .chat-input {
-            padding: 20px;
-            background: white;
-            border-top: 1px solid #e0e0e0;
-        }
-        
-        .input-group {
-            position: relative;
-        }
-        
+        .chat-input { padding: 20px; background: white; border-top: 1px solid #e0e0e0; }
         .form-control {
-            border-radius: 25px;
-            border: 2px solid #e0e0e0;
+            border-radius: 25px; border: 2px solid #e0e0e0;
             padding: 12px 50px 12px 20px;
         }
-        
         .form-control:focus {
             border-color: #4CAF50;
             box-shadow: 0 0 0 0.2rem rgba(76, 175, 80, 0.25);
         }
-        
         .send-btn {
-            position: absolute;
-            right: 5px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: #4CAF50;
-            border: none;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            color: white;
-            transition: all 0.3s;
+            position: absolute; right: 5px; top: 50%;
+            transform: translateY(-50%); background: #4CAF50;
+            border: none; border-radius: 50%; width: 40px;
+            height: 40px; color: white; transition: all 0.3s;
         }
+        .send-btn:hover { background: #45a049; transform: translateY(-50%) scale(1.1); }
+        .typing-indicator { display: none; color: #666; font-style: italic; padding: 10px 20px; }
         
-        .send-btn:hover {
-            background: #45a049;
-            transform: translateY(-50%) scale(1.1);
-        }
-        
-        .typing-indicator {
-            display: none;
-            color: #666;
-            font-style: italic;
-            padding: 10px 20px;
-        }
-        
-        .status-indicator {
-            position: absolute;
-            top: 10px;
-            right: 20px;
-            padding: 5px 10px;
-            border-radius: 15px;
-            font-size: 12px;
-            font-weight: bold;
-        }
-        
-        .status-ready {
-            background: #d4edda;
-            color: #155724;
-        }
-        
-        .status-error {
-            background: #f8d7da;
-            color: #721c24;
-        }
-        
-        .mode-info {
-            background: rgba(255,255,255,0.1);
-            border-radius: 8px;
-            padding: 10px;
+        /* New Styles for Rich Content */
+        .assistant .rich-content img {
+            max-width: 100%;
+            border-radius: 10px;
             margin-top: 10px;
+            border: 1px solid #eee;
+        }
+        .assistant .rich-content .table-responsive {
+            margin-top: 15px;
+        }
+        .assistant .rich-content table {
+            width: 100%;
+            border-collapse: collapse;
             font-size: 14px;
         }
-        
-        .clear-btn {
-            position: absolute;
-            top: 10px;
-            left: 20px;
-            background: rgba(255,255,255,0.2);
-            border: 1px solid rgba(255,255,255,0.3);
-            color: white;
-            border-radius: 5px;
-            padding: 5px 10px;
-            font-size: 12px;
+        .assistant .rich-content th, .assistant .rich-content td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+            vertical-align: middle;
         }
-        
-        .clear-btn:hover {
-            background: rgba(255,255,255,0.4);
+        .assistant .rich-content th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        .assistant .rich-content tr:nth-child(even) { background-color: #f9f9f9; }
+        .assistant .source-link {
+            display: block;
+            margin-top: 15px;
+            font-size: 12px;
+            text-align: right;
+        }
+        .assistant .source-link a {
+            text-decoration: none;
+            color: #4CAF50;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -196,70 +116,33 @@
         <div class="row justify-content-center">
             <div class="col-md-8 col-lg-6">
                 <div class="chat-container">
-                    <!-- Header -->
-                    <div class="chat-header position-relative">
-                        <button class="clear-btn" onclick="clearConversation()">
-                            <i class="fas fa-trash"></i> Clear
-                        </button>
-                        <div class="status-indicator status-ready" id="statusIndicator">
-                            Ready
-                        </div>
+                    <div class="chat-header">
                         <h1><i class="fas fa-seedling"></i> Stardew Valley AI</h1>
                         <p class="mb-0">Your friendly farming assistant</p>
-                        
-                        <!-- Mode Selector -->
                         <div class="mode-selector">
-                            <div class="text-center mb-2">
-                                <strong>Assistant Mode:</strong>
-                            </div>
                             <div class="text-center">
-                                <button class="mode-btn active" data-mode="hints">
-                                    <i class="fas fa-lightbulb"></i> Hints
-                                </button>
-                                <button class="mode-btn" data-mode="walkthrough">
-                                    <i class="fas fa-map"></i> Walkthrough
-                                </button>
-                            </div>
-                            <div class="mode-info" id="modeInfo">
-                                <strong>Hints Mode:</strong> Provides subtle guidance and hints without spoilers
+                                <button class="mode-btn active" data-mode="hints"><i class="fas fa-lightbulb"></i> Hints</button>
+                                <button class="mode-btn" data-mode="walkthrough"><i class="fas fa-map"></i> Walkthrough</button>
                             </div>
                         </div>
                     </div>
                     
-                    <!-- Messages Area -->
                     <div class="chat-messages" id="chatMessages">
-                        <div class="message assistant">
+                         <div class="message assistant">
                             <div class="message-bubble">
-                                <i class="fas fa-hand-wave"></i> Welcome to Stardew Valley! I'm here to help you with your farming adventure. 
-                                <br><br>
-                                Choose your preferred assistance style above:
-                                <ul>
-                                    <li><strong>Hints Mode:</strong> Gentle guidance that lets you discover solutions</li>
-                                    <li><strong>Walkthrough Mode:</strong> Detailed step-by-step instructions</li>
-                                </ul>
-                                What would you like to know about?
+                                Welcome to the enhanced Stardew Valley AI! I can now show images and data tables. Ask me about items, characters, or monsters!
                             </div>
                         </div>
                     </div>
                     
-                    <!-- Typing Indicator -->
                     <div class="typing-indicator" id="typingIndicator">
                         <i class="fas fa-circle-notch fa-spin"></i> Assistant is thinking...
                     </div>
                     
-                    <!-- Input Area -->
                     <div class="chat-input">
                         <div class="input-group">
-                            <input 
-                                type="text" 
-                                class="form-control" 
-                                id="messageInput" 
-                                placeholder="Ask me anything about Stardew Valley..."
-                                autocomplete="off"
-                            >
-                            <button class="send-btn" onclick="sendMessage()">
-                                <i class="fas fa-paper-plane"></i>
-                            </button>
+                            <input type="text" class="form-control" id="messageInput" placeholder="e.g., 'Tell me about Prismatic Shard'" autocomplete="off">
+                            <button class="send-btn" onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
                         </div>
                     </div>
                 </div>
@@ -267,195 +150,155 @@
         </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    
     <script>
         let currentMode = 'hints';
         
-        // Initialize
-        document.addEventListener('DOMContentLoaded', function() {
-            // Set up enter key handler
-            document.getElementById('messageInput').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    sendMessage();
-                }
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('messageInput').addEventListener('keypress', e => {
+                if (e.key === 'Enter') sendMessage();
             });
-            
-            // Set up mode buttons
             document.querySelectorAll('.mode-btn').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    const mode = this.dataset.mode;
-                    changeMode(mode);
-                });
+                btn.addEventListener('click', () => changeMode(btn.dataset.mode));
             });
-            
-            // Load initial status
-            loadStatus();
         });
         
         async function sendMessage() {
             const input = document.getElementById('messageInput');
-            const message = input.value.trim();
+            const messageText = input.value.trim();
+            if (!messageText) return;
             
-            if (!message) return;
-            
-            // Add user message to chat
-            addMessage(message, 'user');
+            addMessage({ text: messageText }, 'user');
             input.value = '';
-            
-            // Show typing indicator
             showTypingIndicator();
             
             try {
                 const response = await fetch('/api/chat', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        message: message,
-                        mode: currentMode
-                    })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: messageText, mode: currentMode })
                 });
                 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
                 }
                 
                 const data = await response.json();
-                
-                // Hide typing indicator
-                hideTypingIndicator();
-                
-                // Add assistant response
-                addMessage(data.response, 'assistant');
+                addMessage(data, 'assistant');
                 
             } catch (error) {
-                hideTypingIndicator();
-                addMessage('Sorry, I encountered an error. Please try again.', 'assistant');
+                addMessage({ text: `Sorry, an error occurred: ${error.message}` }, 'assistant');
                 console.error('Error:', error);
+            } finally {
+                hideTypingIndicator();
             }
         }
         
-        function addMessage(content, sender) {
+        function addMessage(data, sender) {
             const messagesContainer = document.getElementById('chatMessages');
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${sender}`;
             
-            // Convert markdown to HTML for assistant messages
-            const htmlContent = sender === 'assistant' ? marked.parse(content) : content;
-            
-            messageDiv.innerHTML = `
-                <div class="message-bubble">
-                    ${htmlContent}
-                </div>
-            `;
-            
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble';
+
+            if (sender === 'user') {
+                bubble.textContent = data.text;
+            } else {
+                // Main text content (always present)
+                if (data.text) {
+                    const textElement = document.createElement('div');
+                    textElement.innerHTML = marked.parse(data.text);
+                    bubble.appendChild(textElement);
+                }
+
+                const richContentDiv = document.createElement('div');
+                richContentDiv.className = 'rich-content';
+
+                // Image
+                if (data.image_url) {
+                    const img = document.createElement('img');
+                    img.src = data.image_url;
+                    img.alt = 'Relevant Image';
+                    img.className = 'img-fluid'; // Bootstrap class for responsive images
+                    richContentDiv.appendChild(img);
+                }
+
+                // Table
+                if (data.table && data.table.headers && data.table.rows) {
+                    const tableContainer = document.createElement('div');
+                    tableContainer.className = 'table-responsive';
+                    const table = document.createElement('table');
+                    table.className = 'table table-bordered table-striped';
+                    
+                    const thead = document.createElement('thead');
+                    const headerRow = document.createElement('tr');
+                    data.table.headers.forEach(headerText => {
+                        const th = document.createElement('th');
+                        th.textContent = headerText;
+                        headerRow.appendChild(th);
+                    });
+                    thead.appendChild(headerRow);
+                    table.appendChild(thead);
+
+                    const tbody = document.createElement('tbody');
+                    data.table.rows.forEach(rowData => {
+                        const tr = document.createElement('tr');
+                        rowData.forEach(cellData => {
+                            const td = document.createElement('td');
+                            if (typeof cellData === 'string' && (cellData.startsWith('http') || cellData.startsWith('/'))) {
+                                const img = document.createElement('img');
+                                img.src = cellData;
+                                img.style.width = '32px';
+                                img.style.height = '32px';
+                                img.style.objectFit = 'contain';
+                                td.appendChild(img);
+                            } else {
+                                td.textContent = cellData;
+                            }
+                            tr.appendChild(td);
+                        });
+                        tbody.appendChild(tr);
+                    });
+                    table.appendChild(tbody);
+                    tableContainer.appendChild(table)
+                    richContentDiv.appendChild(tableContainer);
+                }
+                
+                bubble.appendChild(richContentDiv);
+
+                // Source Link
+                if (data.source_url) {
+                    const sourceLinkDiv = document.createElement('div');
+                    sourceLinkDiv.className = 'source-link';
+                    const sourceLink = document.createElement('a');
+                    sourceLink.href = data.source_url;
+                    sourceLink.textContent = 'View on Wiki';
+                    sourceLink.target = '_blank';
+                    sourceLinkDiv.appendChild(sourceLink)
+                    bubble.appendChild(sourceLinkDiv);
+                }
+            }
+
+            messageDiv.appendChild(bubble);
             messagesContainer.appendChild(messageDiv);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
         
-        function showTypingIndicator() {
-            document.getElementById('typingIndicator').style.display = 'block';
-        }
-        
-        function hideTypingIndicator() {
-            document.getElementById('typingIndicator').style.display = 'none';
-        }
-        
         async function changeMode(mode) {
-            try {
-                const response = await fetch('/api/mode', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ mode: mode })
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                currentMode = mode;
-                
-                // Update UI
-                updateModeUI(mode, data.mode_info);
-                
-                // Add system message
-                addMessage(`Switched to ${data.mode_info.name}. ${data.mode_info.description}`, 'assistant');
-                
-            } catch (error) {
-                console.error('Error changing mode:', error);
-            }
-        }
-        
-        function updateModeUI(mode, modeInfo) {
-            // Update buttons
+            currentMode = mode;
             document.querySelectorAll('.mode-btn').forEach(btn => {
-                btn.classList.remove('active');
-                if (btn.dataset.mode === mode) {
-                    btn.classList.add('active');
-                }
+                btn.classList.toggle('active', btn.dataset.mode === mode);
             });
-            
-            // Update mode info
-            document.getElementById('modeInfo').innerHTML = `
-                <strong>${modeInfo.name}:</strong> ${modeInfo.description}
-            `;
+            const modeName = mode.charAt(0).toUpperCase() + mode.slice(1);
+            addMessage({ text: `Switched to ${modeName} Mode.` }, 'assistant');
+            // Here you might want to fetch mode info from the backend if it's dynamic
         }
-        
-        async function loadStatus() {
-            try {
-                const response = await fetch('/api/status');
-                const data = await response.json();
-                
-                const statusIndicator = document.getElementById('statusIndicator');
-                if (data.is_ready) {
-                    statusIndicator.textContent = 'Ready';
-                    statusIndicator.className = 'status-indicator status-ready';
-                } else {
-                    statusIndicator.textContent = 'Error';
-                    statusIndicator.className = 'status-indicator status-error';
-                }
-                
-                updateModeUI(data.mode, data.mode_info);
-                
-            } catch (error) {
-                console.error('Error loading status:', error);
-                const statusIndicator = document.getElementById('statusIndicator');
-                statusIndicator.textContent = 'Error';
-                statusIndicator.className = 'status-indicator status-error';
-            }
-        }
-        
-        async function clearConversation() {
-            if (!confirm('Clear conversation history?')) return;
-            
-            try {
-                const response = await fetch('/api/clear', {
-                    method: 'POST'
-                });
-                
-                if (response.ok) {
-                    // Clear messages
-                    const messagesContainer = document.getElementById('chatMessages');
-                    messagesContainer.innerHTML = `
-                        <div class="message assistant">
-                            <div class="message-bubble">
-                                <i class="fas fa-hand-wave"></i> Welcome back! How can I help you with Stardew Valley today?
-                            </div>
-                        </div>
-                    `;
-                }
-                
-            } catch (error) {
-                console.error('Error clearing conversation:', error);
-            }
-        }
+
+        const showTypingIndicator = () => document.getElementById('typingIndicator').style.display = 'block';
+        const hideTypingIndicator = () => document.getElementById('typingIndicator').style.display = 'none';
+
     </script>
 </body>
 </html>
