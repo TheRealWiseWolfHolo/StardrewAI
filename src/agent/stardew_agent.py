@@ -54,6 +54,11 @@ class StardewAgent:
                 name="get_specific_info",
                 description="Get detailed info on a topic. Prefers to find and return a data table if relevant.",
                 func=self.get_specific_info_tool
+            ),
+            Tool(
+                name="create_checklist",
+                description="Use this when the user asks for crafting recipes, bundle requirements, or any multi-step task. The input should be a dictionary with a 'title' and a list of 'items'.",
+                func=lambda x: x # The tool just returns the structured data.
             )
         ]
 
@@ -139,15 +144,17 @@ class StardewAgent:
 - Use this history to understand follow-up questions and resolve pronouns (e.g., if the user asks about "Leah" and then asks "where does she live?", you MUST know "she" is Leah).
 
 **Reasoning Process:**
-1.  **Analyze Query:** Is this a simple question or a complex strategic one? **Always consider the player's context and conversation history.**
-2.  **Simple Queries:** Use a tool directly and return the result.
-3.  **Complex Queries (IMPORTANT):**
-    a. **Deconstruct:** Break the complex query into a logical sequence of smaller, specific sub-questions answerable by your tools, considering the player's context.
-    b. **Execute Sub-Queries:** Use your tools to answer each sub-question one by one.
-    c. **Synthesize:** Combine the information into a single, cohesive, and easy-to-understand step-by-step guide.
+1.  **Analyze Query & Context:** Analyze the user's question, their game status, and the chat history.
+2.  **Tool Selection:**
+    *   For crafting recipes, bundle requirements, or step-by-step tasks, **immediately use the `create_checklist` tool**.
+    *   For specific data lookup (like a fish's location), use `get_specific_info`.
+    *   For general questions, use `search_stardew_knowledge`.
+3.  **Synthesize (If Necessary):** If a simple tool call isn't enough (e.g., complex strategy), deconstruct the problem, execute multiple tool calls, and synthesize the results into a cohesive answer.
 
 **Output Format:**
-- Your final output MUST be a single JSON object with 'text' and optional 'image_url', 'table', and 'source_url' fields.
+- Your final output MUST be a single JSON object.
+- If you use `create_checklist`, ensure the `checklist` field is populated in the final JSON.
+- Always aim to provide `text`, and optionally `image_url`, `table`, and `source_url` fields.
 """
         
         hints_prompt = """You are a friendly Stardew Valley assistant who gives helpful hints, **tailored to the player's current situation.**
@@ -161,6 +168,7 @@ class StardewAgent:
 
 **Answering Style:**
 - Provide concise, timely tips.
+- If the user asks for a recipe or bundle, use the `create_checklist` tool.
 - Your final output MUST be a single JSON object.
 """
         
@@ -204,6 +212,7 @@ class StardewAgent:
                 "text": structured_output.get("text"),
                 "image_url": structured_output.get("image_url"),
                 "table": structured_output.get("table"),
+                "checklist": structured_output.get("checklist"),
                 "source_url": structured_output.get("source_url")
             }
             

@@ -44,6 +44,7 @@ class RichChatResponse(BaseModel):
     text: Optional[str] = None
     image_url: Optional[str] = None
     table: Optional[Dict] = None
+    checklist: Optional[Dict] = None
     source_url: Optional[str] = None
     mode: str
     timestamp: float = Field(default_factory=time.time)
