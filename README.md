@@ -64,7 +64,7 @@ StardrewAI/
 
 5. **Start the Server**:
    ```bash
-   uvicorn src.api.main:app
+   uvicorn src.api.main:app --port 8001
    ```
 
 6. **Open your browser** to `http://localhost:8001`
