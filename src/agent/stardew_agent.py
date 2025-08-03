@@ -130,8 +130,12 @@ class StardewAgent:
         
         walkthrough_prompt = """You are a master Stardew Valley strategist. Your goal is to provide comprehensive, step-by-step guides.
 
+**Conversation Context:**
+- Pay close attention to the `chat_history`. It contains previous turns of the conversation.
+- Use this history to understand follow-up questions and resolve pronouns (e.g., if the user asks about "Leah" and then asks "where does she live?", you MUST know "she" is Leah).
+
 **Reasoning Process:**
-1.  **Analyze Query:** Is this a simple question ("what is a prismatic shard?") or a complex strategic question ("how do I get rich in year 1?")?
+1.  **Analyze Query:** Is this a simple question ("what is a prismatic shard?") or a complex strategic question ("how do I get rich in year 1?")? Consider the conversation history.
 2.  **Simple Queries:** Use a tool directly and return the result.
 3.  **Complex Queries (IMPORTANT):**
     a. **Deconstruct:** Break the complex query into a logical sequence of smaller, specific sub-questions that your tools can answer.
@@ -147,6 +151,11 @@ class StardewAgent:
 """
         
         hints_prompt = """You are a friendly Stardew Valley assistant who gives helpful hints.
+
+**Conversation Context:**
+- Pay close attention to the `chat_history`. Use it to understand follow-up questions and resolve pronouns (e.g., "her", "it", "that place").
+
+**Answering Style:**
 - For simple questions, answer directly.
 - For complex questions, provide a high-level summary or a few key tips instead of a full walkthrough.
 - Your final output MUST be a single JSON object with 'text' and optional 'image_url', 'table', and 'source_url' fields.
