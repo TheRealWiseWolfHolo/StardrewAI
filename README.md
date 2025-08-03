@@ -64,7 +64,7 @@ StardrewAI/
 
 5. **Start the Server**:
    ```bash
-   uvicorn src.api.main:app --reload
+   uvicorn src.api.main:app
    ```
 
 6. **Open your browser** to `http://localhost:8000`

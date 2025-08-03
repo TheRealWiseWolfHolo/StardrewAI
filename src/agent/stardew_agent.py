@@ -58,7 +58,7 @@ class StardewAgent:
             Tool(
                 name="create_checklist",
                 description="Use this when the user asks for crafting recipes, bundle requirements, or any multi-step task. The input should be a dictionary with a 'title' and a list of 'items'.",
-                func=lambda x: x # The tool just returns the structured data.
+                func=lambda x: json.dumps({"checklist": x})
             )
         ]
 
