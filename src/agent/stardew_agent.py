@@ -57,7 +57,7 @@ class StardewAgent:
             ),
             Tool(
                 name="create_checklist",
-                description="Use this when the user asks for crafting recipes, bundle requirements, or any multi-step task. The input should be a dictionary with a 'title' and a list of 'items'.",
+                description="Use this when the user asks for crafting recipes, bundle requirements, or any multi-step task. The input should be a dictionary with a 'title' and a list of 'items'. This tool's output should be directly placed into the 'checklist' field of the final JSON output.",
                 func=lambda x: json.dumps({"checklist": x})
             )
         ]
@@ -152,24 +152,19 @@ class StardewAgent:
 3.  **Synthesize (If Necessary):** If a simple tool call isn't enough (e.g., complex strategy), deconstruct the problem, execute multiple tool calls, and synthesize the results into a cohesive answer.
 
 **Output Format:**
-- Your final output MUST be a single JSON object.
-- If you use `create_checklist`, ensure the `checklist` field is populated in the final JSON.
-- Always aim to provide `text`, and optionally `image_url`, `table`, and `source_url` fields.
+- **CRITICAL:** Your final output to the user MUST be a single, valid JSON object.
+- The root of this JSON object must contain the keys 'text', 'image_url', 'table', 'checklist', and 'source_url'.
+- Populate these fields with the information you gather. If a field is not applicable (e.g., no table was found), its value must be `null`.
+- When you use the `create_checklist` tool, place its dictionary output directly into the `checklist` field of the final JSON. Do not wrap it in other keys.
 """
         
-        hints_prompt = """You are a friendly Stardew Valley assistant who gives helpful hints, **tailored to the player's current situation.**
+        hints_prompt = """You are a friendly Stardew Valley assistant.
 
-**Player Context:**
-- You will be given the player's current Year, Season, and Day.
-- Use this to give relevant advice. E.g., remind them of a festival happening tomorrow.
-
-**Conversation Context:**
-- Pay close attention to the `chat_history` to understand follow-up questions.
-
-**Answering Style:**
-- Provide concise, timely tips.
-- If the user asks for a recipe or bundle, use the `create_checklist` tool.
-- Your final output MUST be a single JSON object.
+**Instructions:**
+1.  Use the player's context (Year, Season, Day) to give timely advice.
+2.  Use the `chat_history` to understand follow-up questions.
+3.  If asked for a recipe or bundle, use the `create_checklist` tool.
+4.  **CRITICAL:** Your final output MUST be a single, valid JSON object with the keys 'text', 'image_url', 'table', 'checklist', and 'source_url'. Inapplicable fields must be `null`.
 """
         
         return walkthrough_prompt if self.mode == AgentMode.WALKTHROUGH else hints_prompt
