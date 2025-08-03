@@ -84,20 +84,27 @@
         }
         .assistant .rich-content table {
             width: 100%;
-            border-collapse: collapse;
+            border-collapse: separate; /* Changed for better radius effect */
+            border-spacing: 0;
             font-size: 14px;
+            border-radius: 8px; /* Rounded corners for the table */
+            overflow: hidden; /* Ensures inner elements respect the radius */
+            box-shadow: 0 4px 8px rgba(0,0,0,0.05); /* Subtle shadow */
         }
         .assistant .rich-content th, .assistant .rich-content td {
-            border: 1px solid #ddd;
-            padding: 8px;
+            border: 1px solid #dee2e6; /* Softer border color */
+            padding: 12px 15px; /* More padding */
             text-align: left;
             vertical-align: middle;
         }
         .assistant .rich-content th {
-            background-color: #f2f2f2;
-            font-weight: bold;
+            background-color: #4CAF50; /* Theme color for header */
+            color: white;
+            font-weight: 600; /* Bolder */
         }
-        .assistant .rich-content tr:nth-child(even) { background-color: #f9f9f9; }
+        .assistant .rich-content tr:nth-child(even) { background-color: #f8f9fa; }
+        .assistant .rich-content tr:hover { background-color: #e9ecef; } /* Hover effect */
+        
         .assistant .source-link {
             display: block;
             margin-top: 15px;
@@ -108,6 +115,10 @@
             text-decoration: none;
             color: #4CAF50;
             font-weight: bold;
+            transition: color 0.2s;
+        }
+        .assistant .source-link a:hover {
+            color: #45a049;
         }
     </style>
 </head>
@@ -206,11 +217,14 @@
             if (sender === 'user') {
                 bubble.textContent = data.text;
             } else {
+                let contentAdded = false;
+
                 // Main text content (always present)
                 if (data.text) {
                     const textElement = document.createElement('div');
                     textElement.innerHTML = marked.parse(data.text);
                     bubble.appendChild(textElement);
+                    contentAdded = true;
                 }
 
                 const richContentDiv = document.createElement('div');
@@ -223,6 +237,7 @@
                     img.alt = 'Relevant Image';
                     img.className = 'img-fluid'; // Bootstrap class for responsive images
                     richContentDiv.appendChild(img);
+                    contentAdded = true;
                 }
 
                 // Table
@@ -264,11 +279,14 @@
                     table.appendChild(tbody);
                     tableContainer.appendChild(table)
                     richContentDiv.appendChild(tableContainer);
+                    contentAdded = true;
                 }
                 
-                bubble.appendChild(richContentDiv);
+                if (contentAdded) {
+                    bubble.appendChild(richContentDiv);
+                }
 
-                // Source Link
+                // Source Link - always attempt to add if URL is present
                 if (data.source_url) {
                     const sourceLinkDiv = document.createElement('div');
                     sourceLinkDiv.className = 'source-link';

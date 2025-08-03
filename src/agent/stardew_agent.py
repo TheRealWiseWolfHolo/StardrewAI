@@ -157,6 +157,13 @@ class StardewAgent:
                 # If the LLM failed to return JSON, wrap its text output
                 structured_output = {"text": output}
 
+            # If the LLM didn't include a source, find a relevant one.
+            if not structured_output.get("source_url"):
+                logger.info("No source_url in LLM response, finding a fallback.")
+                fallback_results = self.rag_system.search(message, n_results=1)
+                if fallback_results:
+                    structured_output["source_url"] = fallback_results[0]['metadata'].get('url')
+
             # Standardize the final dictionary
             return {
                 "text": structured_output.get("text"),
