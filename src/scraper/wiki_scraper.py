@@ -4,15 +4,15 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin
+from collections import deque
 
 import requests
 from bs4 import BeautifulSoup
 
 # Import settings with proper path handling
 import sys
-from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 try:
@@ -21,7 +21,7 @@ except ImportError:
     # Fallback settings if config module not available
     class Settings:
         wiki_base_url = "https://stardewvalleywiki.com"
-        scrape_delay = 1.0
+        scrape_delay = 0.5
         max_concurrent_requests = 5
         scraped_data_file = "./data/wiki_content.json"
     
@@ -32,371 +32,189 @@ logger = logging.getLogger(__name__)
 
 
 class StardewWikiScraper:
-    """Scrapes content from the Stardew Valley Wiki with enhanced discovery."""
+    """
+    Scrapes content from the Stardew Valley Wiki using a Breadth-First Search (BFS)
+    strategy for comprehensive content discovery, now including image and table data.
+    """
     
-    def __init__(self, max_pages: int = 200):
+    def __init__(self, max_pages: int = 1000):
         self.base_url = settings.wiki_base_url
         self.delay = settings.scrape_delay
-        self.max_concurrent = settings.max_concurrent_requests
         self.max_pages = max_pages
         self.visited_urls: Set[str] = set()
         self.scraped_content: List[Dict] = []
         
-        # Comprehensive list of key wiki pages (175+ pages)
-        self.key_pages = [
-            # Main pages
-            "/Stardew_Valley_Wiki",
-            
-            # Core gameplay
-            "/Crops", "/Animals", "/Mining", "/Fishing", "/Foraging", "/Cooking", "/Crafting",
-            "/Combat", "/Energy", "/Health", "/Skills", "/Experience", "/Professions",
-            
-            # Social
-            "/Marriage", "/Friendship", "/Villagers", "/Bachelor", "/Bachelorette",
-            "/Abigail", "/Alex", "/Elliott", "/Emily", "/Haley", "/Harvey", "/Leah", 
-            "/Maru", "/Penny", "/Sam", "/Sebastian", "/Shane",
-            "/Caroline", "/Clint", "/Demetrius", "/Dwarf", "/Evelyn", "/George", 
-            "/Gus", "/Jas", "/Jodi", "/Kent", "/Lewis", "/Linus", "/Marnie", 
-            "/Pam", "/Pierre", "/Robin", "/Vincent", "/Willy", "/Wizard",
-            
-            # Locations
-            "/Pelican_Town", "/The_Beach", "/The_Desert", "/The_Forest", "/The_Mountain",
-            "/Cindersap_Forest", "/The_Mines", "/Skull_Cavern", "/Secret_Woods",
-            "/Ginger_Island", "/Volcano_Dungeon", "/Island_West", "/Island_North",
-            "/Island_South", "/Island_East", "/Fern_Islands",
-            
-            # Farm & Buildings
-            "/Farm", "/Farmhouse", "/Farm_Buildings", "/Coop", "/Barn", "/Stable",
-            "/Silo", "/Well", "/Mayonnaise_Machine", "/Cheese_Press", "/Keg",
-            "/Preserves_Jar", "/Oil_Maker", "/Loom", "/Bee_House", "/Lightning_Rod",
-            "/Slime_Hutch", "/Fish_Pond", "/Shed", "/Cabin", "/Greenhouse",
-            "/Junimo_Hut", "/Gold_Clock", "/Obelisk",
-            
-            # Items & Resources
-            "/Seeds", "/Fertilizer", "/Tools", "/Weapons", "/Rings", "/Boots",
-            "/Food", "/Artisan_Goods", "/Animal_Products", "/Fish", "/Gems",
-            "/Minerals", "/Artifacts", "/Resources", "/Materials", "/Trash",
-            "/Loved_Gifts", "/Liked_Gifts", "/Neutral_Gifts", "/Disliked_Gifts", "/Hated_Gifts",
-            
-            # Quests & Events
-            "/Quests", "/Community_Center", "/Bundles", "/JojaMart", "/Achievements",
-            "/Heart_Events", "/Cutscenes", "/Festivals", "/Calendar",
-            "/Egg_Festival", "/Flower_Dance", "/Luau", "/Dance_of_the_Moonlight_Jellies",
-            "/Stardew_Valley_Fair", "/Spirit's_Eve", "/Festival_of_Ice", "/Feast_of_the_Winter_Star",
-            
-            # Game mechanics
-            "/Weather", "/Seasons", "/Time", "/Sleep", "/Shipping", "/Money",
-            "/Luck", "/Museum", "/Library", "/Traveling_Cart", "/Night_Market",
-            
-            # Advanced content
-            "/Perfection", "/Professor_Snail", "/Gourmand_Frog", "/Simon_Says", 
-            "/Crystal_Cave", "/Qi_Challenges", "/Walnut_Room", "/Golden_Walnuts", 
-            "/Parrot_Express", "/Island_Obelisk",
-            
-            # Special items
-            "/Prismatic_Shard", "/Ancient_Fruit", "/Sweet_Gem_Berry", "/Starfruit",
-            "/Coffee", "/Wine", "/Pale_Ale", "/Mead", "/Truffle_Oil", "/Cheese",
-            "/Mayonnaise", "/Cloth", "/Honey", "/Jelly", "/Pickle", "/Juice",
-            
-            # All individual crops
-            "/Parsnip", "/Green_Bean", "/Cauliflower", "/Potato", "/Tulip_Bulb", "/Kale", "/Jazz",
-            "/Garlic", "/Blue_Jazz", "/Tulip", "/Parsnip_Seeds", "/Bean_Starter", "/Cauliflower_Seeds",
-            "/Potato_Seeds", "/Kale_Seeds", "/Tulip_Bulb", "/Jazz_Seeds", "/Garlic_Seeds",
-            "/Melon", "/Tomato", "/Hot_Pepper", "/Blueberry", "/Radish", "/Wheat", "/Hops",
-            "/Spice_Berry", "/Summer_Spangle", "/Poppy", "/Summer_Seeds", "/Tomato_Seeds",
-            "/Pepper_Seeds", "/Blueberry_Seeds", "/Radish_Seeds", "/Wheat_Seeds", "/Hops_Starter",
-            "/Eggplant", "/Corn", "/Pumpkin", "/Bok_Choy", "/Yam", "/Beet", "/Amaranth",
-            "/Grape", "/Sweet_Gem_Berry", "/Cranberries", "/Sunflower", "/Fairy_Rose",
-            "/Eggplant_Seeds", "/Corn_Seeds", "/Pumpkin_Seeds", "/Bok_Choy_Seeds", "/Yam_Seeds",
-            "/Beet_Seeds", "/Amaranth_Seeds", "/Grape_Starter", "/Cranberry_Seeds", "/Sunflower_Seeds",
-            
-            # All fish types
-            "/Anchovy", "/Tuna", "/Sardine", "/Bream", "/Largemouth_Bass", "/Smallmouth_Bass",
-            "/Rainbow_Trout", "/Salmon", "/Walleye", "/Perch", "/Carp", "/Catfish", "/Pike",
-            "/Sunfish", "/Red_Mullet", "/Herring", "/Eel", "/Octopus", "/Red_Snapper", "/Squid",
-            "/Sea_Cucumber", "/Super_Cucumber", "/Ghostfish", "/Stonefish", "/Ice_Pip", "/Lava_Eel",
-            "/Sandfish", "/Scorpion_Carp", "/Flounder", "/Midnight_Carp", "/Mutant_Carp", "/Sturgeon",
-            "/Tiger_Trout", "/Bullhead", "/Tilapia", "/Chub", "/Dorado", "/Albacore", "/Shad",
-            "/Lingcod", "/Halibut", "/Woodskip", "/Void_Salmon", "/Slimejack", "/Midnight_Squid",
-            "/Spook_Fish", "/Blobfish", "/Crimsonfish", "/Angler", "/Legend", "/Glacierfish", "/Mutant_Carp",
-            
-            # All animals
-            "/Chicken", "/Duck", "/Rabbit", "/Cow", "/Goat", "/Sheep", "/Pig", "/Dinosaur",
-            "/Blue_Chicken", "/Void_Chicken", "/Golden_Chicken", "/Ostrich",
-            
-            # All minerals/gems
-            "/Quartz", "/Earth_Crystal", "/Frozen_Tear", "/Fire_Quartz", "/Emerald", "/Aquamarine",
-            "/Ruby", "/Amethyst", "/Topaz", "/Jade", "/Diamond", "/Iridium_Ore", "/Gold_Ore",
-            "/Iron_Ore", "/Copper_Ore", "/Coal", "/Stone", "/Clay", "/Battery_Pack",
-            
-            # Modding and technical
-            "/Modding", "/Save_File", "/Options", "/Controls", "/Updates", "/Mobile", "/Console"
-        ]
-        
-        # Categories for discovery
-        self.category_pages = [
-            "/Category:Crops", "/Category:Fish", "/Category:Minerals", "/Category:Cooking",
-            "/Category:Villagers", "/Category:Locations", "/Category:Buildings"
+        self.seed_pages = [
+            "/Stardew_Valley_Wiki", "/Crops", "/Villagers", "/Fishing", 
+            "/Mining", "/Community_Center", "/Ginger_Island", "/Monsters"
         ]
 
-    def get_page_content(self, url: str) -> Optional[Dict]:
-        """Scrape content from a single page."""
+    def get_page_content_and_links(self, url: str) -> Optional[Tuple[Dict, Set[str]]]:
+        """
+        Scrapes content, discovers links, and extracts image URLs and structured tables.
+        """
         try:
-            if url in self.visited_urls:
+            full_url = urljoin(self.base_url, url)
+            if full_url in self.visited_urls:
                 return None
                 
-            logger.info(f"Scraping: {url}")
-            self.visited_urls.add(url)
+            logger.info(f"Scraping: {full_url}")
+            self.visited_urls.add(full_url)
             
             session = requests.Session()
             session.headers.update({
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                'User-Agent': 'StardewAIScraper/1.1 (AdvancedDataExtraction)'
             })
             
-            response = session.get(url, timeout=10, allow_redirects=True)
+            response = session.get(full_url, timeout=15, allow_redirects=True)
             response.raise_for_status()
             
-            if response.url != url:
-                logger.info(f"Redirected to: {response.url}")
+            if response.url != full_url:
+                self.visited_urls.add(response.url)
             
             soup = BeautifulSoup(response.content, 'html.parser')
             
-            # Extract title
             title = soup.find('h1', {'class': 'firstHeading'})
             title_text = title.get_text().strip() if title else "Unknown"
             
-            # Remove navigation elements
-            for element in soup.find_all(['nav', 'aside', 'footer', 'script', 'style']):
-                element.decompose()
-            
-            # Extract main content
             content_div = soup.find('div', {'id': 'mw-content-text'})
             if not content_div:
-                content_div = soup.find('div', {'class': 'mw-parser-output'})
+                return None
+
+            # Extract main image from infobox before cleaning
+            main_image_url = self._extract_main_image(content_div)
+
+            # Enhanced cleanup to remove non-content elements
+            self._cleanup_content(content_div)
+
+            # Remove navigation, footers, and other clutter
+            for element in content_div.find_all(['nav', 'aside', 'footer', 'script', 'style', 'div.reflist', 'span.mw-editsection']):
+                element.decompose()
+
+            discovered_links = self._discover_wiki_links(content_div)
             
-            if content_div:
-                # Clean up edit links
-                for element in content_div.find_all(['span'], {'class': 'mw-editsection'}):
-                    element.decompose()
-                
-                text_content = content_div.get_text(strip=True, separator='\n')
-                
-                # Extract tables
-                tables = []
-                for table in content_div.find_all('table'):
-                    table_data = self._extract_table_data(table)
-                    if table_data:
-                        tables.append(table_data)
-                
-                # Extract infobox
-                infobox = content_div.find('table', {'class': 'infobox'})
-                infobox_data = self._extract_infobox_data(infobox) if infobox else {}
-                
-                return {
-                    'url': url,
-                    'title': title_text,
-                    'content': text_content,
-                    'tables': tables,
-                    'infobox': infobox_data,
-                    'scraped_at': time.time()
-                }
+            # Extract structured tables
+            tables = [self._extract_table_data(table) for table in content_div.find_all('table', {'class': 'wikitable'}) if self._extract_table_data(table)]
+
+            text_content = content_div.get_text(strip=True, separator='\n')
             
+            page_data = {
+                'url': response.url,
+                'title': title_text,
+                'content': text_content,
+                'image_url': main_image_url,
+                'tables': tables,
+                'scraped_at': time.time()
+            }
+            
+            return page_data, discovered_links
+            
+        except requests.RequestException as e:
+            logger.error(f"HTTP Error scraping {url}: {e}")
+            return None
         except Exception as e:
-            logger.error(f"Error scraping {url}: {str(e)}")
+            logger.error(f"General Error scraping {url}: {e}")
             return None
 
-    def discover_wiki_links(self, content_div) -> Set[str]:
-        """Discover additional wiki links."""
-        links = set()
-        try:
-            if content_div:
-                for link in content_div.find_all('a', href=True):
-                    href = link.get('href', '')
-                    if href.startswith('/') and not href.startswith('//'):
-                        if not any(skip in href for skip in [
-                            'Category:', 'File:', 'Template:', 'Help:', 'Special:',
-                            'Talk:', 'User:', '#', '?', '&action=', 'index.php'
-                        ]):
-                            url = href.split('#')[0].split('?')[0]
-                            if url and len(url) > 1:
-                                links.add(url)
-        except Exception as e:
-            logger.warning(f"Error discovering links: {str(e)}")
-        return links
+    def _cleanup_content(self, content_div: BeautifulSoup):
+        """Removes unwanted elements like SVGs, scripts, and decorative icons."""
+        # Remove all SVG elements as they are often used for icons or complex graphics
+        for svg in content_div.find_all('svg'):
+            svg.decompose()
+        # Remove script and style tags if any are missed
+        for s in content_div.find_all(['script', 'style']):
+            s.decompose()
+        # Remove elements that are typically non-content, like nav boxes or metadata
+        for junk in content_div.find_all(class_=['nomobile', 'mw-editsection', 'plainlinks', 'toc']):
+            junk.decompose()
+        # Remove any stray images that are not part of the main content (e.g., icons)
+        for img in content_div.find_all('img', class_=lambda x: x != 'infobox-img'): # Keep main image
+            if not img.find_parent('table', class_='infobox'):
+                img.decompose()
 
-    def get_category_pages(self, category_url: str) -> Set[str]:
-        """Get pages from a category."""
-        pages = set()
-        try:
-            logger.info(f"Exploring category: {category_url}")
-            url = urljoin(self.base_url, category_url)
-            content = self.get_page_content(url)
-            
-            if content:
-                soup = BeautifulSoup(content['content'], 'html.parser')
-                for link in soup.find_all('a', href=True):
-                    href = link.get('href', '')
-                    if href.startswith('/') and not href.startswith('//'):
-                        if not any(skip in href for skip in [
-                            'Category:', 'File:', 'Template:', 'Help:', 'Special:',
-                            'Talk:', 'User:', '#', '?', '&action='
-                        ]):
-                            pages.add(href.split('#')[0].split('?')[0])
-        except Exception as e:
-            logger.warning(f"Error exploring category {category_url}: {str(e)}")
-        return pages
-
-    def discover_all_pages(self) -> Set[str]:
-        """Discover all relevant pages."""
-        all_pages = set(self.key_pages)
+    def _extract_main_image(self, content_div: BeautifulSoup) -> Optional[str]:
+        """Extracts the main image URL from the infobox."""
+        infobox = content_div.find('table', {'class': 'infobox'})
+        if not infobox:
+            return None
         
-        logger.info("Exploring categories for additional pages...")
-        for category in self.category_pages:
-            if len(all_pages) >= self.max_pages:
-                break
-            category_pages = self.get_category_pages(category)
-            all_pages.update(category_pages)
-            time.sleep(self.delay)
-        
-        logger.info("Discovering links from key pages...")
-        discovery_pages = list(all_pages)[:20]  # Limit to avoid infinite crawling
-        
-        for page_path in discovery_pages:
-            if len(all_pages) >= self.max_pages:
-                break
-                
-            url = urljoin(self.base_url, page_path)
-            if url not in self.visited_urls:
-                content = self.get_page_content(url)
-                if content:
-                    soup = BeautifulSoup(content['content'], 'html.parser')
-                    content_div = soup.find('div', {'id': 'mw-content-text'})
-                    if not content_div:
-                        content_div = soup.find('div', {'class': 'mw-parser-output'})
-                    
-                    if content_div:
-                        discovered_links = self.discover_wiki_links(content_div)
-                        all_pages.update(discovered_links)
-                
-                time.sleep(self.delay)
-        
-        filtered_pages = self.filter_relevant_pages(all_pages)
-        logger.info(f"Discovered {len(filtered_pages)} relevant pages to scrape")
-        return filtered_pages
-
-    def filter_relevant_pages(self, pages: Set[str]) -> Set[str]:
-        """Filter pages for game relevance."""
-        relevant_pages = set()
-        
-        priority_keywords = [
-            'crop', 'animal', 'fish', 'mineral', 'gem', 'artifact', 'villager', 
-            'marriage', 'heart', 'event', 'festival', 'quest', 'bundle', 'skill',
-            'mine', 'desert', 'island', 'cave', 'forest', 'beach', 'mountain',
-            'building', 'machine', 'tool', 'weapon', 'ring', 'boot', 'hat',
-            'food', 'recipe', 'cooking', 'craft', 'artisan', 'seed', 'fruit',
-            'vegetable', 'flower', 'tree', 'season', 'weather', 'calendar',
-            'community', 'center', 'joja', 'achievement', 'perfection', 'golden',
-            'prismatic', 'ancient', 'rare', 'legendary', 'statue', 'obelisk'
-        ]
-        
-        # Always include key pages
-        relevant_pages.update(self.key_pages)
-        
-        for page in pages:
-            if len(relevant_pages) >= self.max_pages:
-                break
-                
-            page_lower = page.lower()
-            if any(keyword in page_lower for keyword in priority_keywords):
-                relevant_pages.add(page)
-        
-        return relevant_pages
-
-    def _extract_table_data(self, table) -> Optional[Dict]:
-        """Extract table data."""
-        try:
-            headers = []
-            rows = []
-            
-            header_row = table.find('tr')
-            if header_row:
-                for th in header_row.find_all(['th', 'td']):
-                    headers.append(th.get_text().strip())
-            
-            for row in table.find_all('tr')[1:]:
-                row_data = []
-                for cell in row.find_all(['td', 'th']):
-                    row_data.append(cell.get_text().strip())
-                if row_data:
-                    rows.append(row_data)
-            
-            if headers and rows:
-                return {'headers': headers, 'rows': rows}
-        except Exception as e:
-            logger.warning(f"Error extracting table: {str(e)}")
+        image_tag = infobox.find('img')
+        if image_tag and image_tag.get('src'):
+            # Construct full URL if relative
+            return urljoin(self.base_url, image_tag['src'])
         return None
 
-    def _extract_infobox_data(self, infobox) -> Dict:
-        """Extract infobox data."""
-        data = {}
-        try:
-            if infobox:
-                for row in infobox.find_all('tr'):
-                    cells = row.find_all(['th', 'td'])
-                    if len(cells) >= 2:
-                        key = cells[0].get_text().strip()
-                        value = cells[1].get_text().strip()
-                        if key and value:
-                            data[key] = value
-        except Exception as e:
-            logger.warning(f"Error extracting infobox: {str(e)}")
-        return data
+    def _discover_wiki_links(self, content_div: BeautifulSoup) -> Set[str]:
+        """Discover internal wiki links."""
+        links = set()
+        for link in content_div.find_all('a', href=True):
+            href = link.get('href', '')
+            if href.startswith('/') and not href.startswith('//'):
+                if not any(prefix in href for prefix in ['File:', 'Template:', 'Help:', 'Special:', 'User_talk:', 'Talk:', 'User:', 'mediawiki/index.php?title=']) and not any(href.endswith(ext) for ext in ['.png', '.jpg', '.gif']):
+                    clean_url = href.split('#')[0].split('?')[0]
+                    if clean_url and len(clean_url) > 1:
+                        links.add(clean_url)
+        return links
 
-    def scrape_all_pages(self, discover_mode: bool = True) -> List[Dict]:
-        """Scrape all pages with optional discovery."""
-        if discover_mode:
-            logger.info("Discovery mode enabled - finding all relevant pages...")
-            pages_to_scrape = self.discover_all_pages()
-        else:
-            logger.info("Using predefined page list only...")
-            pages_to_scrape = set(self.key_pages)
-        
-        pages_list = list(pages_to_scrape)[:self.max_pages]
-        logger.info(f"Starting to scrape {len(pages_list)} pages")
-        
-        successful_scrapes = 0
-        failed_scrapes = 0
-        
-        for i, page_path in enumerate(pages_list, 1):
-            url = urljoin(self.base_url, page_path)
+    def _extract_table_data(self, table: BeautifulSoup) -> Optional[Dict]:
+        """Extracts structured data (headers and rows) from a wiki table."""
+        try:
+            headers = [th.get_text(strip=True) for th in table.find('tr').find_all(['th', 'td'])]
+            rows = []
+            for row in table.find_all('tr')[1:]:
+                # Extract text and handle images within cells
+                row_data = []
+                for cell in row.find_all(['td', 'th']):
+                    img = cell.find('img')
+                    if img and img.get('src'):
+                        # If cell contains an image, grab its URL
+                        row_data.append(urljoin(self.base_url, img['src']))
+                    else:
+                        row_data.append(cell.get_text(strip=True))
+                if any(row_data): # only add if row is not empty
+                    rows.append(row_data)
+
+            # Assign a title to the table if one is found immediately preceding it
+            caption = table.find('caption')
+            table_title = caption.get_text(strip=True) if caption else "Untitled Table"
             
-            logger.info(f"[{i}/{len(pages_list)}] Scraping: {page_path}")
-            content = self.get_page_content(url)
+            if headers and rows:
+                return {'title': table_title, 'headers': headers, 'rows': rows}
+        except Exception as e:
+            logger.warning(f"Error extracting table: {e}")
+        return None
+
+    def scrape_website(self):
+        """Performs a BFS scrape of the wiki."""
+        frontier = deque(self.seed_pages)
+        logger.info(f"Starting scrape with {len(self.seed_pages)} seed pages. Max pages: {self.max_pages}.")
+        
+        while frontier and len(self.scraped_content) < self.max_pages:
+            current_url = frontier.popleft()
             
-            if content:
-                self.scraped_content.append(content)
-                successful_scrapes += 1
-                logger.info(f"✓ Success: {content['title']} ({len(content['content'])} chars)")
+            result = self.get_page_content_and_links(current_url)
+            
+            if result:
+                page_data, new_links = result
+                self.scraped_content.append(page_data)
+                
+                logger.info(f"✓ [{len(self.scraped_content)}/{self.max_pages}] Success: {page_data['title']} (Image: {'Yes' if page_data['image_url'] else 'No'}, Tables: {len(page_data['tables'])})")
+                
+                for link in new_links:
+                    full_link_url = urljoin(self.base_url, link)
+                    if full_link_url not in self.visited_urls and link not in frontier:
+                        frontier.append(link)
             else:
-                failed_scrapes += 1
-                logger.warning(f"✗ Failed: {page_path}")
-            
+                logger.warning(f"✗ Failed or skipped: {current_url}")
+
             time.sleep(self.delay)
-            
-            if i % 10 == 0:
-                logger.info(f"Progress: {i}/{len(pages_list)} ({successful_scrapes} successful)")
-        
-        logger.info(f"Scraping completed! {len(self.scraped_content)} pages scraped")
-        if successful_scrapes + failed_scrapes > 0:
-            success_rate = 100 * successful_scrapes / (successful_scrapes + failed_scrapes)
-            logger.info(f"Success rate: {success_rate:.1f}%")
+
+        logger.info(f"Scraping finished. Total pages scraped: {len(self.scraped_content)}")
         return self.scraped_content
 
     def save_content(self, filepath: Optional[str] = None) -> str:
-        """Save scraped content."""
-        if not filepath:
-            filepath = settings.scraped_data_file
-        
+        """Saves the scraped content to a JSON file."""
+        filepath = filepath or settings.scraped_data_file
         Path(filepath).parent.mkdir(parents=True, exist_ok=True)
         
         with open(filepath, 'w', encoding='utf-8') as f:
@@ -406,10 +224,8 @@ class StardewWikiScraper:
         return filepath
 
     def load_content(self, filepath: Optional[str] = None) -> List[Dict]:
-        """Load previously scraped content."""
-        if not filepath:
-            filepath = settings.scraped_data_file
-        
+        """Loads scraped content from a JSON file."""
+        filepath = filepath or settings.scraped_data_file
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 self.scraped_content = json.load(f)
@@ -421,52 +237,33 @@ class StardewWikiScraper:
 
 
 def main():
-    """Enhanced scraper main function."""
+    """Main function to run the scraper."""
     import argparse
     
-    parser = argparse.ArgumentParser(description='Enhanced Stardew Valley Wiki Scraper')
-    parser.add_argument('--max-pages', type=int, default=200, 
-                       help='Maximum pages to scrape (default: 200)')
-    parser.add_argument('--no-discovery', action='store_true',
-                       help='Disable automatic page discovery')
-    parser.add_argument('--force', action='store_true',
-                       help='Force re-scraping')
+    parser = argparse.ArgumentParser(description='Stardew Valley Wiki Scraper (Rich Data Version)')
+    parser.add_argument('--max-pages', type=int, default=1000, help='Maximum pages to scrape')
+    parser.add_argument('--force', action='store_true', help='Force re-scraping')
+    parser.add_argument('--output-file', type=str, default=settings.scraped_data_file)
     
     args = parser.parse_args()
     
     scraper = StardewWikiScraper(max_pages=args.max_pages)
     
-    if not args.force:
-        existing_content = scraper.load_content()
-        if existing_content:
-            logger.info(f"Found {len(existing_content)} existing pages. Use --force to re-scrape.")
-            return
-    
-    discovery_mode = not args.no_discovery
-    scraper.scrape_all_pages(discover_mode=discovery_mode)
-    scraper.save_content()
-    
-    # Summary
-    total_chars = sum(len(content.get('content', '')) for content in scraper.scraped_content)
-    total_tables = sum(len(content.get('tables', [])) for content in scraper.scraped_content)
+    if not args.force and Path(args.output_file).exists():
+        logger.info(f"Data file found. Use --force to re-scrape.")
+        return
+        
+    scraper.scrape_website()
+    scraper.save_content(filepath=args.output_file)
     
     logger.info("=" * 50)
-    logger.info("ENHANCED SCRAPING SUMMARY")
-    logger.info("=" * 50)
+    logger.info("SCRAPING SUMMARY")
+    pages_with_images = sum(1 for p in scraper.scraped_content if p.get('image_url'))
+    total_tables = sum(len(p.get('tables', [])) for p in scraper.scraped_content)
     logger.info(f"Total pages scraped: {len(scraper.scraped_content)}")
-    logger.info(f"Total content size: {total_chars:,} characters")
+    logger.info(f"Pages with main image: {pages_with_images}")
     logger.info(f"Total tables extracted: {total_tables}")
-    if len(scraper.scraped_content) > 0:
-        logger.info(f"Average page size: {total_chars // len(scraper.scraped_content):,} characters")
-    
-    logger.info("Sample of scraped pages:")
-    for i, content in enumerate(scraper.scraped_content[:10]):
-        logger.info(f"  {i+1}. {content['title']} ({len(content['content'])} chars)")
-    
-    if len(scraper.scraped_content) > 10:
-        logger.info(f"  ... and {len(scraper.scraped_content) - 10} more pages")
-    
-    logger.info("Enhanced scraping completed successfully!")
+    logger.info("=" * 50)
 
 
 if __name__ == "__main__":
