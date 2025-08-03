@@ -67,7 +67,7 @@ StardrewAI/
    uvicorn src.api.main:app
    ```
 
-6. **Open your browser** to `http://localhost:8000`
+6. **Open your browser** to `http://localhost:8001`
 
 ## Configuration
 

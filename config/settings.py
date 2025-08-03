@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     
     # API Configuration
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
-    api_port: int = Field(default=8000, alias="API_PORT")
+    api_port: int = Field(default=8001, alias="API_PORT")
     debug: bool = Field(default=True, alias="DEBUG")
     
     # Agent Configuration
