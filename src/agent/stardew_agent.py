@@ -110,6 +110,7 @@ class StardewAgent:
         
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_message),
+            ("user", "Current game status: {context}"),
             MessagesPlaceholder(variable_name="chat_history"),
             ("human", "{input}"),
             MessagesPlaceholder(variable_name="agent_scratchpad")
@@ -128,37 +129,40 @@ class StardewAgent:
     def _get_system_message(self) -> str:
         """Gets the system message based on the current agent mode."""
         
-        walkthrough_prompt = """You are a master Stardew Valley strategist. Your goal is to provide comprehensive, step-by-step guides.
+        walkthrough_prompt = """You are a master Stardew Valley strategist. Your goal is to provide comprehensive, step-by-step guides, **always tailored to the player's current situation.**
+
+**Player Context:**
+- You will be given the player's current Year, Season, and Day.
+- **THIS IS CRITICAL:** Use this information to make your advice timely and relevant. For example, do not suggest planting Spring crops in Fall. Check birthdays, festivals, or villager schedules based on the current date.
 
 **Conversation Context:**
 - Pay close attention to the `chat_history`. It contains previous turns of the conversation.
 - Use this history to understand follow-up questions and resolve pronouns (e.g., if the user asks about "Leah" and then asks "where does she live?", you MUST know "she" is Leah).
 
 **Reasoning Process:**
-1.  **Analyze Query:** Is this a simple question ("what is a prismatic shard?") or a complex strategic question ("how do I get rich in year 1?")? Consider the conversation history.
+1.  **Analyze Query:** Is this a simple question or a complex strategic one? **Always consider the player's context and conversation history.**
 2.  **Simple Queries:** Use a tool directly and return the result.
 3.  **Complex Queries (IMPORTANT):**
-    a. **Deconstruct:** Break the complex query into a logical sequence of smaller, specific sub-questions that your tools can answer.
+    a. **Deconstruct:** Break the complex query into a logical sequence of smaller, specific sub-questions answerable by your tools, considering the player's context.
     b. **Execute Sub-Queries:** Use your tools to answer each sub-question one by one.
-    c. **Synthesize:** Combine the information from all sub-queries into a single, cohesive, and easy-to-understand step-by-step guide.
-    d. **Example:** For "How to make money in Spring Year 1?", you might first search "profitable spring crops year 1", then "early game fishing spots", and then "when does the mine open?". Finally, combine this into a strategy.
+    c. **Synthesize:** Combine the information into a single, cohesive, and easy-to-understand step-by-step guide.
 
 **Output Format:**
-- Your final output to the user MUST be a single JSON object.
-- The `text` field must contain your complete, synthesized answer.
-- Populate `image_url` or `table` with the most relevant single piece of rich data from your research.
-- Populate `source_url` with the most important source link.
+- Your final output MUST be a single JSON object with 'text' and optional 'image_url', 'table', and 'source_url' fields.
 """
         
-        hints_prompt = """You are a friendly Stardew Valley assistant who gives helpful hints.
+        hints_prompt = """You are a friendly Stardew Valley assistant who gives helpful hints, **tailored to the player's current situation.**
+
+**Player Context:**
+- You will be given the player's current Year, Season, and Day.
+- Use this to give relevant advice. E.g., remind them of a festival happening tomorrow.
 
 **Conversation Context:**
-- Pay close attention to the `chat_history`. Use it to understand follow-up questions and resolve pronouns (e.g., "her", "it", "that place").
+- Pay close attention to the `chat_history` to understand follow-up questions.
 
 **Answering Style:**
-- For simple questions, answer directly.
-- For complex questions, provide a high-level summary or a few key tips instead of a full walkthrough.
-- Your final output MUST be a single JSON object with 'text' and optional 'image_url', 'table', and 'source_url' fields.
+- Provide concise, timely tips.
+- Your final output MUST be a single JSON object.
 """
         
         return walkthrough_prompt if self.mode == AgentMode.WALKTHROUGH else hints_prompt
@@ -170,10 +174,17 @@ class StardewAgent:
             logger.info(f"Agent mode changed to: {mode.value}")
             self.agent_executor = self._create_agent_executor()
     
-    def chat(self, message: str) -> Dict:
+    def chat(self, message: str, context: Optional[Dict] = None) -> Dict:
         """Processes a chat message and returns a structured dictionary response."""
         try:
-            response = self.agent_executor.invoke({"input": message})
+            # Include context in the input if it exists
+            input_data = {"input": message}
+            if context:
+                input_data["context"] = f"Player's current status: Year {context.get('year', 1)}, {context.get('season', 'Spring')}, Day {context.get('day', 1)}."
+            else:
+                input_data["context"] = "Player status is not specified."
+
+            response = self.agent_executor.invoke(input_data)
             output = response.get("output", '{"text": "Sorry, I had trouble processing that."}')
             
             # Ensure output is a valid JSON object

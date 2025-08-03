@@ -29,9 +29,16 @@ templates = Jinja2Templates(directory="src/frontend/templates")
 agent: Optional[StardewAgent] = None
 
 # --- Pydantic Models ---
+class PlayerContext(BaseModel):
+    year: Optional[int] = 1
+    season: Optional[str] = "Spring"
+    day: Optional[int] = 1
+
 class ChatMessage(BaseModel):
     message: str
     mode: Optional[str] = None
+    context: Optional[PlayerContext] = None
+
 
 class RichChatResponse(BaseModel):
     text: Optional[str] = None
@@ -90,7 +97,10 @@ async def chat(message: ChatMessage):
                 raise HTTPException(status_code=400, detail="Invalid mode specified.")
         
         # Agent's chat method now returns a dictionary
-        response_data = agent.chat(message.message)
+        response_data = agent.chat(
+            message=message.message,
+            context=message.context.dict() if message.context else None
+        )
         
         return RichChatResponse(
             **response_data,

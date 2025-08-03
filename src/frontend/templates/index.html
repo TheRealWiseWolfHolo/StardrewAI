@@ -31,6 +31,21 @@
         }
         .mode-btn.active { background: rgba(255,255,255,0.8); color: #4CAF50; }
         .mode-btn:hover { background: rgba(255,255,255,0.4); }
+        .player-context {
+            padding: 10px;
+            background: rgba(0,0,0,0.1);
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .context-input {
+            background-color: rgba(255,255,255,0.8) !important;
+            border: 1px solid rgba(255,255,255,0.3) !important;
+            color: #333 !important;
+            font-size: 14px;
+        }
+        .context-input::placeholder {
+            color: #666 !important;
+        }
         .chat-messages {
             height: 500px; overflow-y: auto; padding: 20px;
             background: #f8f9fa;
@@ -130,6 +145,26 @@
                     <div class="chat-header">
                         <h1><i class="fas fa-seedling"></i> Stardew Valley AI</h1>
                         <p class="mb-0">Your friendly farming assistant</p>
+                        
+                        <div class="player-context mt-3">
+                            <div class="row g-2 align-items-center">
+                                <div class="col">
+                                    <input type="number" id="yearInput" class="form-control form-control-sm context-input" placeholder="Year" value="1">
+                                </div>
+                                <div class="col">
+                                    <select id="seasonInput" class="form-select form-select-sm context-input">
+                                        <option value="Spring" selected>Spring</option>
+                                        <option value="Summer">Summer</option>
+                                        <option value="Fall">Fall</option>
+                                        <option value="Winter">Winter</option>
+                                    </select>
+                                </div>
+                                <div class="col">
+                                    <input type="number" id="dayInput" class="form-control form-control-sm context-input" placeholder="Day" value="1" min="1" max="28">
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="mode-selector">
                             <div class="text-center">
                                 <button class="mode-btn active" data-mode="hints"><i class="fas fa-lightbulb"></i> Hints</button>
@@ -179,6 +214,17 @@
             const messageText = input.value.trim();
             if (!messageText) return;
             
+            // Collect context
+            const year = document.getElementById('yearInput').value;
+            const season = document.getElementById('seasonInput').value;
+            const day = document.getElementById('dayInput').value;
+            
+            const payload = {
+                message: messageText,
+                mode: currentMode,
+                context: { year, season, day }
+            };
+
             addMessage({ text: messageText }, 'user');
             input.value = '';
             showTypingIndicator();
@@ -187,7 +233,7 @@
                 const response = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: messageText, mode: currentMode })
+                    body: JSON.stringify(payload)
                 });
                 
                 if (!response.ok) {
