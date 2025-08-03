@@ -127,15 +127,32 @@ class StardewAgent:
     
     def _get_system_message(self) -> str:
         """Gets the system message based on the current agent mode."""
-        # This can be expanded as before to have different prompts for HINTS/WALKTHROUGH
-        return """You are a Stardew Valley assistant.
-        Your tools can return structured JSON data containing text, an image_url, a data table, and a source_url.
-        When you receive this data, your main job is to present it clearly to the user.
-        - If you get a table, tell the user you found a table and let the UI display it.
-        - If you get an image, mention it and the UI will show it.
-        - Always provide the text information.
-        - Your final output should be a single JSON object containing the fields: 'text', 'image_url', 'table', and 'source_url'.
-        """
+        
+        walkthrough_prompt = """You are a master Stardew Valley strategist. Your goal is to provide comprehensive, step-by-step guides.
+
+**Reasoning Process:**
+1.  **Analyze Query:** Is this a simple question ("what is a prismatic shard?") or a complex strategic question ("how do I get rich in year 1?")?
+2.  **Simple Queries:** Use a tool directly and return the result.
+3.  **Complex Queries (IMPORTANT):**
+    a. **Deconstruct:** Break the complex query into a logical sequence of smaller, specific sub-questions that your tools can answer.
+    b. **Execute Sub-Queries:** Use your tools to answer each sub-question one by one.
+    c. **Synthesize:** Combine the information from all sub-queries into a single, cohesive, and easy-to-understand step-by-step guide.
+    d. **Example:** For "How to make money in Spring Year 1?", you might first search "profitable spring crops year 1", then "early game fishing spots", and then "when does the mine open?". Finally, combine this into a strategy.
+
+**Output Format:**
+- Your final output to the user MUST be a single JSON object.
+- The `text` field must contain your complete, synthesized answer.
+- Populate `image_url` or `table` with the most relevant single piece of rich data from your research.
+- Populate `source_url` with the most important source link.
+"""
+        
+        hints_prompt = """You are a friendly Stardew Valley assistant who gives helpful hints.
+- For simple questions, answer directly.
+- For complex questions, provide a high-level summary or a few key tips instead of a full walkthrough.
+- Your final output MUST be a single JSON object with 'text' and optional 'image_url', 'table', and 'source_url' fields.
+"""
+        
+        return walkthrough_prompt if self.mode == AgentMode.WALKTHROUGH else hints_prompt
 
     def set_mode(self, mode: AgentMode):
         """Changes the agent's mode and recreates the executor."""
