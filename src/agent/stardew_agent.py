@@ -110,7 +110,6 @@ class StardewAgent:
         
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_message),
-            ("user", "Current game status: {context}"),
             MessagesPlaceholder(variable_name="chat_history"),
             ("human", "{input}"),
             MessagesPlaceholder(variable_name="agent_scratchpad")
@@ -177,14 +176,13 @@ class StardewAgent:
     def chat(self, message: str, context: Optional[Dict] = None) -> Dict:
         """Processes a chat message and returns a structured dictionary response."""
         try:
-            # Include context in the input if it exists
-            input_data = {"input": message}
+            # Manually format the input to include context, ensuring the AI sees it.
             if context:
-                input_data["context"] = f"Player's current status: Year {context.get('year', 1)}, {context.get('season', 'Spring')}, Day {context.get('day', 1)}."
+                full_message = f"Player's current status: Year {context.get('year', 1)}, {context.get('season', 'Spring')}, Day {context.get('day', 1)}. Question: {message}"
             else:
-                input_data["context"] = "Player status is not specified."
+                full_message = message
 
-            response = self.agent_executor.invoke(input_data)
+            response = self.agent_executor.invoke({"input": full_message})
             output = response.get("output", '{"text": "Sorry, I had trouble processing that."}')
             
             # Ensure output is a valid JSON object
@@ -197,7 +195,7 @@ class StardewAgent:
             # If the LLM didn't include a source, find a relevant one.
             if not structured_output.get("source_url"):
                 logger.info("No source_url in LLM response, finding a fallback.")
-                fallback_results = self.rag_system.search(message, n_results=1)
+                fallback_results = self.rag_system.search(message, n_results=1) # Search on original message
                 if fallback_results:
                     structured_output["source_url"] = fallback_results[0]['metadata'].get('url')
 
