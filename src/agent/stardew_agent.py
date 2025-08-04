@@ -14,6 +14,7 @@ from langchain_openai import ChatOpenAI
 
 from config.settings import settings
 from src.rag.knowledge_base import StardewRAGSystem
+from src.planner.crop_planner import CropPlanner # Add this import
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,7 +29,8 @@ class StardewAgent:
     def __init__(self, mode: AgentMode = AgentMode.HINTS):
         self.mode = mode
         self.rag_system = StardewRAGSystem()
-        
+        self.crop_planner = CropPlanner(self.rag_system) # Instantiate CropPlanner
+
         self.llm = ChatOpenAI(
             model=settings.openai_model,
             temperature=0.6,
@@ -52,174 +54,166 @@ class StardewAgent:
             ),
             Tool(
                 name="get_specific_info",
-                description="Get detailed info on a topic. Prefers to find and return a data table if relevant.",
-                func=self.get_specific_info_tool
+                description="Get detailed information about a specific topic in Stardew Valley (crops, animals, characters, locations, etc.).",
+                func=self._get_specific_info_tool
             ),
-            Tool(
-                name="create_checklist",
-                description="Use this when the user asks for crafting recipes, bundle requirements, or any multi-step task. The input should be a dictionary with a 'title' and a list of 'items'. This tool's output should be directly placed into the 'checklist' field of the final JSON output.",
-                func=lambda x: json.dumps({"checklist": x})
+            Tool( # New tool for crop planning
+                name="plan_crop_farming",
+                description="Plan a crop farming strategy, including land size, seeds, fertilizer, and startup funds for a target yield of a specific crop in a given season. Input should be a string like 'crop_name, target_yield, season'.",
+                func=self._plan_crop_tool # This will now call the new method
             )
         ]
+        return tools
 
-    def _format_structured_result(self, results: List[Dict]) -> str:
-        """Formats search results into a structured JSON string for the LLM."""
-        if not results:
-            return json.dumps({"text": "No information found."})
+    def _search_knowledge_tool(self, query: str) -> str:
+        """Helper to search knowledge base."""
+        return self.rag_system.get_context_for_query(query)
 
-        # Prioritize returning a table if one was found
-        table_result = next((r for r in results if r['metadata'].get('source_type') == 'table'), None)
-        if table_result:
-            return json.dumps({
-                "text": f"Found a data table for '{table_result['metadata']['title']}'.",
-                "table": table_result['metadata'].get('table'),
-                "image_url": table_result['metadata'].get('image_url'),
-                "source_url": table_result['metadata'].get('url')
-            })
+    def _get_specific_info_tool(self, query: str) -> str:
+        """Helper to get specific info."""
+        # This could be enhanced to parse query for specific entities more robustly
+        return self.rag_system.get_context_for_query(query)
 
-        # Otherwise, return the top text result
-        top_result = results[0]
-        return json.dumps({
-            "text": top_result['content'],
-            "image_url": top_result['metadata'].get('image_url'),
-            "source_url": top_result['metadata'].get('url')
-        })
-
-    def search_knowledge_tool(self, query: str) -> str:
-        """Tool to search the KB. Returns a JSON string."""
+    def _plan_crop_tool(self, query: str) -> str:
+        """
+        Delegates crop planning to the CropPlanner instance.
+        Query format: "crop_name, target_yield, season"
+        Example: "wheat, 100, summer"
+        """
         try:
-            results = self.rag_system.search(query, n_results=3)
-            return self._format_structured_result(results)
-        except Exception as e:
-            logger.error(f"Error in search tool: {e}")
-            return json.dumps({"text": "Sorry, an error occurred during search."})
-    
-    def get_specific_info_tool(self, topic: str) -> str:
-        """Tool for specific info, prioritizing tables. Returns a JSON string."""
-        try:
-            # First, search specifically for tables related to the topic
-            table_results = self.rag_system.search(topic, n_results=2, filter_dict={'source_type': 'table'})
-            if table_results:
-                return self._format_structured_result(table_results)
+            parts = [p.strip() for p in query.split(',')]
+            if len(parts) != 3:
+                return "Invalid query format for crop planning. Please use 'crop_name, target_yield, season'."
+
+            crop_name, target_yield_str, season = parts
+            target_yield = int(target_yield_str)
             
-            # If no table, do a general search
-            general_results = self.rag_system.search(topic, n_results=3)
-            return self._format_structured_result(general_results)
-        except Exception as e:
-            logger.error(f"Error in specific info tool: {e}")
-            return json.dumps({"text": f"Sorry, an error occurred finding info on {topic}."})
+            return self.crop_planner.plan_crop_farming(crop_name, target_yield, season)
 
-    def _create_agent_executor(self):
-        """Creates the LangChain agent executor."""
-        system_message = self._get_system_message()
+        except ValueError:
+            return "Invalid target yield. Please provide a valid number."
+        except Exception as e:
+            logger.error(f"Error in _plan_crop_tool: {e}")
+            return f"An error occurred while planning your crop: {str(e)}"
+            
+    def set_mode(self, new_mode: AgentMode):
+        """
+        Sets the agent's operating mode and recreates the agent executor.
+        """
+        if self.mode != new_mode:
+            self.mode = new_mode
+            logger.info(f"Agent mode set to {self.mode.value}")
+            # Recreate agent with new mode
+            self.agent = self._create_agent()
+            self.agent_executor = AgentExecutor(
+                agent=self.agent,
+                tools=self.tools,
+                memory=self.memory,
+                verbose=settings.debug,
+                max_iterations=settings.max_response_length // 100, # Adjust max iterations based on response length
+                early_stopping_method="generate"
+            )
         
+    def _create_agent(self):
+        """Create the LangChain agent with appropriate prompts."""
+        if self.mode == AgentMode.HINTS:
+            system_message = """You are a helpful Stardew Valley assistant that provides HINTS and SUBTLE GUIDANCE.\n\nYour role:\n- Give players gentle nudges in the right direction\n- Avoid giving away complete solutions unless specifically asked\n- Keep responses concise and encouraging\n- Let players discover and learn on their own\n- Use phrases like "You might want to try...", "Consider...", "Have you thought about..."\n\nGuidelines:\n- Keep responses under 200 words\n- Focus on one main hint per response\n- Ask follow-up questions to guide discovery\n- Avoid spoilers about late-game content\n- Encourage experimentation and exploration\n\nWhen players ask questions, use your tools to find relevant information, then present it as a helpful hint rather than a complete answer."""
+
+        else:  # WALKTHROUGH mode
+            system_message = """You are a comprehensive Stardew Valley guide that provides DETAILED WALKTHROUGHS and COMPLETE SOLUTIONS.\n\nYour role:\n- Provide step-by-step instructions\n- Give complete and detailed explanations\n- Include all relevant information and context\n- Be thorough and systematic in your responses\n- Help players achieve their goals efficiently\n\nGuidelines:\n- Provide comprehensive answers with specific steps\n- Include relevant numbers, timings, and requirements\n- Give complete item lists and resource requirements\n- Explain the reasoning behind strategies\n- Cover multiple approaches when applicable\n\nWhen players ask questions, use your tools to gather comprehensive information and provide detailed, actionable guidance.\nYour user has asked for a crop planning feature. When a user asks for a plan for a specific crop, quantity, and season, use the `plan_crop_farming` tool.\nThe `plan_crop_farming` tool input format is 'crop_name, target_yield, season'. For example, if the user asks "plan to grow 100 wheat in summer", you should call the tool with `plan_crop_farming(wheat, 100, summer)`.
+"""
+
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_message),
             MessagesPlaceholder(variable_name="chat_history"),
             ("human", "{input}"),
             MessagesPlaceholder(variable_name="agent_scratchpad")
         ])
+
+        return create_openai_functions_agent(self.llm, self.tools, prompt)
+
+    def process_message(self, message: str, mode: Optional[str] = None) -> str:
+        """Process a user message and return the agent's response."""
+        if mode and mode.lower() in [m.value for m in AgentMode]:
+            self.mode = AgentMode(mode.lower())
+            logger.info(f"Agent mode set to {self.mode.value}")
         
-        agent = create_openai_functions_agent(self.llm, self.tools, prompt)
-        
-        return AgentExecutor(
-            agent=agent,
+        # Recreate agent with new mode if it changed
+        self.agent = self._create_agent()
+        self.agent_executor = AgentExecutor(
+            agent=self.agent,
             tools=self.tools,
             memory=self.memory,
-            verbose=True,
-            handle_parsing_errors=True # Important for structured output
+            verbose=settings.debug,
+            max_iterations=settings.max_response_length // 100, # Adjust max iterations based on response length
+            early_stopping_method="generate"
         )
-    
-    def _get_system_message(self) -> str:
-        """Gets the system message based on the current agent mode."""
         
-        walkthrough_prompt = """You are a master Stardew Valley strategist. Your goal is to provide comprehensive, step-by-step guides, **always tailored to the player's current situation.**
-
-**Player Context:**
-- You will be given the player's current Year, Season, and Day.
-- **THIS IS CRITICAL:** Use this information to make your advice timely and relevant. For example, do not suggest planting Spring crops in Fall. Check birthdays, festivals, or villager schedules based on the current date.
-
-**Conversation Context:**
-- Pay close attention to the `chat_history`. It contains previous turns of the conversation.
-- Use this history to understand follow-up questions and resolve pronouns (e.g., if the user asks about "Leah" and then asks "where does she live?", you MUST know "she" is Leah).
-
-**Reasoning Process:**
-1.  **Analyze Query & Context:** Analyze the user's question, their game status, and the chat history.
-2.  **Tool Selection:**
-    *   For crafting recipes, bundle requirements, or step-by-step tasks, **immediately use the `create_checklist` tool**.
-    *   For specific data lookup (like a fish's location), use `get_specific_info`.
-    *   For general questions, use `search_stardew_knowledge`.
-3.  **Synthesize (If Necessary):** If a simple tool call isn't enough (e.g., complex strategy), deconstruct the problem, execute multiple tool calls, and synthesize the results into a cohesive answer.
-
-**Output Format:**
-- **CRITICAL:** Your final output to the user MUST be a single, valid JSON object.
-- The root of this JSON object must contain the keys 'text', 'image_url', 'table', 'checklist', and 'source_url'.
-- Populate these fields with the information you gather. If a field is not applicable (e.g., no table was found), its value must be `null`.
-- When you use the `create_checklist` tool, place its dictionary output directly into the `checklist` field of the final JSON. Do not wrap it in other keys.
-"""
-        
-        hints_prompt = """You are a friendly Stardew Valley assistant.
-
-**Instructions:**
-1.  Use the player's context (Year, Season, Day) to give timely advice.
-2.  Use the `chat_history` to understand follow-up questions.
-3.  If asked for a recipe or bundle, use the `create_checklist` tool.
-4.  **CRITICAL:** Your final output MUST be a single, valid JSON object with the keys 'text', 'image_url', 'table', 'checklist', and 'source_url'. Inapplicable fields must be `null`.
-"""
-        
-        return walkthrough_prompt if self.mode == AgentMode.WALKTHROUGH else hints_prompt
-
-    def set_mode(self, mode: AgentMode):
-        """Changes the agent's mode and recreates the executor."""
-        if self.mode != mode:
-            self.mode = mode
-            logger.info(f"Agent mode changed to: {mode.value}")
-            self.agent_executor = self._create_agent_executor()
-    
-    def chat(self, message: str, context: Optional[Dict] = None) -> Dict:
-        """Processes a chat message and returns a structured dictionary response."""
         try:
-            # Manually format the input to include context, ensuring the AI sees it.
-            if context:
-                full_message = f"Player's current status: Year {context.get('year', 1)}, {context.get('season', 'Spring')}, Day {context.get('day', 1)}. Question: {message}"
-            else:
-                full_message = message
-
-            response = self.agent_executor.invoke({"input": full_message})
-            output = response.get("output", '{"text": "Sorry, I had trouble processing that."}')
-            
-            # Ensure output is a valid JSON object
-            try:
-                structured_output = json.loads(output)
-            except json.JSONDecodeError:
-                # If the LLM failed to return JSON, wrap its text output
-                structured_output = {"text": output}
-
-            # If the LLM didn't include a source, find a relevant one.
-            if not structured_output.get("source_url"):
-                logger.info("No source_url in LLM response, finding a fallback.")
-                fallback_results = self.rag_system.search(message, n_results=1) # Search on original message
-                if fallback_results:
-                    structured_output["source_url"] = fallback_results[0]['metadata'].get('url')
-
-            # Standardize the final dictionary
-            return {
-                "text": structured_output.get("text"),
-                "image_url": structured_output.get("image_url"),
-                "table": structured_output.get("table"),
-                "checklist": structured_output.get("checklist"),
-                "source_url": structured_output.get("source_url")
-            }
-            
+            response = self.agent_executor.invoke({"input": message})
+            return response["output"]
         except Exception as e:
-            logger.error(f"Error in agent.chat: {e}")
-            return {"text": "An error occurred. Please try again."}
+            logger.error(f"Error processing message: {e}")
+            return "I apologize, but I encountered an error while processing your request. Please try again or rephrase your query."
+    
+    def get_conversation_history(self) -> List[BaseMessage]:
+        """Get the current conversation history."""
+        return self.memory.chat_memory.messages
+    
+    def clear_memory(self):
+        """Clear the conversation memory."""
+        self.memory.clear()
+        logger.info("Conversation memory cleared")
+    
+    def get_mode_info(self) -> Dict:
+        """Get information about the current mode."""
+        mode_descriptions = {
+            AgentMode.HINTS: {
+                "name": "Hints Mode",
+                "description": "Provides subtle guidance and hints without spoilers",
+                "style": "Encouraging nudges that let you discover solutions",
+                "response_length": "Concise (under 200 words)",
+                "spoiler_protection": "High - avoids revealing solutions directly"
+            },
+            AgentMode.WALKTHROUGH: {
+                "name": "Full Walkthrough Mode", 
+                "description": "Provides detailed step-by-step instructions",
+                "style": "Comprehensive guides with complete solutions",
+                "response_length": "Detailed (comprehensive explanations)",
+                "spoiler_protection": "Low - provides complete information"
+            }
+        }
+        
+        return mode_descriptions[self.mode]
 
-if __name__ == '__main__':
-    # A simple test for the agent
-    agent = StardewAgent(mode=AgentMode.WALKTHROUGH)
-    test_query = "What monsters are in the volcano dungeon?"
-    print(f"Testing query: {test_query}")
-    response = agent.chat(test_query)
-    print("\nStructured Response:")
-    print(json.dumps(response, indent=2))
+
+# Convenience functions for creating agents
+def create_hints_agent() -> StardewAgent:
+    """Create an agent in hints mode."""
+    return StardewAgent(mode=AgentMode.HINTS)
+
+
+def create_walkthrough_agent() -> StardewAgent:
+    """Create an agent in walkthrough mode."""
+    return StardewAgent(mode=AgentMode.WALKTHROUGH)
+
+
+def main():
+    """Test the agent functionality."""
+    print("Testing Stardew Valley Agent...")
+    
+    # Test hints mode
+    print("\n=== HINTS MODE ===")
+    hints_agent = create_hints_agent()
+    response = hints_agent.chat("How do I make money in early game?")
+    print(f"Response: {response}")
+    
+    # Test walkthrough mode
+    print("\n=== WALKTHROUGH MODE ===")
+    walkthrough_agent = create_walkthrough_agent()
+    response = walkthrough_agent.chat("How do I make money in early game?")
+    print(f"Response: {response}")
+
+
+if __name__ == "__main__":
+    main()
