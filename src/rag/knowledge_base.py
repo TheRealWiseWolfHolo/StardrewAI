@@ -3,12 +3,14 @@
 import json
 import logging
 import sys
+import argparse
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 from sentence_transformers import SentenceTransformer
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 # Add the project root to Python path
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -16,12 +18,10 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 try:
     from config.settings import settings
 except ImportError:
-    # Fallback settings class
     class Settings:
         embedding_model = "all-MiniLM-L6-v2"
         chroma_db_path = "./data/chroma_db"
-        scraped_data_file = "./Data/wiki_content.json"
-    
+        scraped_data_file = "./data/wiki_content.json"
     settings = Settings()
 
 logging.basicConfig(level=logging.INFO)
@@ -29,267 +29,158 @@ logger = logging.getLogger(__name__)
 
 
 class StardewRAGSystem:
-    """Retrieval-Augmented Generation system for Stardew Valley knowledge."""
+    """RAG system for Stardew Valley, now supporting rich data like images and tables."""
     
     def __init__(self):
         self.embedding_model = SentenceTransformer(settings.embedding_model)
         self.db_path = settings.chroma_db_path
         
-        # Initialize ChromaDB
         self.client = chromadb.PersistentClient(
             path=self.db_path,
-            settings=ChromaSettings(
-                anonymized_telemetry=False,
-                allow_reset=True
-            )
+            settings=ChromaSettings(anonymized_telemetry=False, allow_reset=True)
         )
         
-        # Get or create collection
-        try:
-            self.collection = self.client.get_collection("stardew_knowledge")
-            logger.info("Loaded existing ChromaDB collection")
-        except Exception:
-            # Collection doesn't exist, create it
-            self.collection = self.client.create_collection(
-                name="stardew_knowledge",
-                metadata={"description": "Stardew Valley Wiki knowledge base"}
-            )
-            logger.info("Created new ChromaDB collection")
-    
+        # We get the collection dynamically in the search function to avoid stale references
+        self.collection_name = "stardew_knowledge"
+        logger.info(f"RAG system initialized for collection '{self.collection_name}'")
+
     def process_scraped_data(self, scraped_data: List[Dict]) -> List[Dict]:
-        """Process scraped wiki data into structured chunks."""
+        """Processes scraped data into chunks, preserving rich metadata."""
         processed_chunks = []
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000, chunk_overlap=200
+        )
         
         for page in scraped_data:
             try:
-                # Split content into manageable chunks
-                content_chunks = self._split_content(page['content'])
-                
-                for i, chunk in enumerate(content_chunks):
-                    if len(chunk.strip()) < 50:  # Skip very short chunks
-                        continue
-                    
-                    chunk_data = {
-                        'id': f"{page['title']}_{i}",
-                        'title': page['title'],
-                        'url': page['url'],
-                        'content': chunk,
-                        'chunk_index': i,
-                        'source_type': 'wiki_content'
-                    }
-                    
-                    # Add infobox data if available
-                    if page.get('infobox'):
-                        chunk_data['infobox'] = page['infobox']
-                    
-                    processed_chunks.append(chunk_data)
-                
-                # Process tables separately
-                for j, table in enumerate(page.get('tables', [])):
-                    table_content = self._table_to_text(table)
-                    if table_content:
-                        table_chunk = {
-                            'id': f"{page['title']}_table_{j}",
-                            'title': f"{page['title']} - Table {j+1}",
-                            'url': page['url'],
-                            'content': table_content,
-                            'chunk_index': -1,  # Special index for tables
-                            'source_type': 'table_data',
-                            'table_data': table
+                base_meta = {
+                    'url': page['url'],
+                    'title': page['title'],
+                    'image_url': page.get('image_url')
+                }
+                content_chunks = text_splitter.split_text(page['content'])
+                for i, chunk_text in enumerate(content_chunks):
+                    if len(chunk_text.strip()) < 50: continue
+                    processed_chunks.append({
+                        'id': f"{page['url']}_content_{i}",
+                        'content': chunk_text,
+                        'metadata': {**base_meta, 'source_type': 'text'}
+                    })
+                for j, table_data in enumerate(page.get('tables', [])):
+                    table_text_representation = self._table_to_text(table_data)
+                    if not table_text_representation: continue
+                    processed_chunks.append({
+                        'id': f"{page['url']}_table_{j}",
+                        'content': table_text_representation,
+                        'metadata': {
+                            **base_meta,
+                            'source_type': 'table',
+                            'table_json': json.dumps(table_data)
                         }
-                        processed_chunks.append(table_chunk)
-                
+                    })
             except Exception as e:
-                logger.warning(f"Error processing page {page.get('title', 'Unknown')}: {str(e)}")
-                continue
+                logger.warning(f"Error processing page {page.get('title', 'Unknown')}: {e}")
         
-        logger.info(f"Processed {len(processed_chunks)} chunks from {len(scraped_data)} pages")
+        logger.info(f"Processed {len(processed_chunks)} total chunks from {len(scraped_data)} pages.")
         return processed_chunks
     
-    def _split_content(self, content: str, max_chunk_size: int = 1000) -> List[str]:
-        """Split content into chunks while preserving context."""
-        if not content:
-            return []
-        
-        # Split by paragraphs first
-        paragraphs = content.split('\n\n')
-        chunks = []
-        current_chunk = ""
-        
-        for paragraph in paragraphs:
-            if len(current_chunk) + len(paragraph) > max_chunk_size:
-                if current_chunk:
-                    chunks.append(current_chunk.strip())
-                current_chunk = paragraph
-            else:
-                current_chunk += f"\n\n{paragraph}" if current_chunk else paragraph
-        
-        if current_chunk:
-            chunks.append(current_chunk.strip())
-        
-        return chunks
-    
     def _table_to_text(self, table: Dict) -> str:
-        """Convert table data to readable text."""
-        if not table.get('headers') or not table.get('rows'):
-            return ""
-        
+        if not table.get('headers') or not table.get('rows'): return ""
+        title = table.get('title', 'This table')
         headers = table['headers']
-        rows = table['rows']
-        
-        # Create a text representation of the table
-        text_parts = [f"Table with columns: {', '.join(headers)}"]
-        
-        for row in rows[:10]:  # Limit to first 10 rows
+        text_parts = [f"{title} with columns: {', '.join(headers)}."]
+        for row in table['rows'][:5]:
             if len(row) == len(headers):
-                row_text = []
-                for header, value in zip(headers, row):
-                    if value.strip():
-                        row_text.append(f"{header}: {value}")
-                if row_text:
-                    text_parts.append(" | ".join(row_text))
-        
+                row_text = [f"{headers[i]}: {cell}" for i, cell in enumerate(row) if str(cell).strip()]
+                if row_text: text_parts.append(" | ".join(row_text))
         return "\n".join(text_parts)
     
-    def build_vector_database(self, processed_chunks: Optional[List[Dict]] = None) -> int:
-        """Build vector database from processed chunks."""
-        if processed_chunks is None:
-            # Load from scraped data
-            try:
-                with open(settings.scraped_data_file, 'r', encoding='utf-8') as f:
-                    scraped_data = json.load(f)
-                processed_chunks = self.process_scraped_data(scraped_data)
-            except FileNotFoundError:
-                logger.error(f"No scraped data found at {settings.scraped_data_file}")
-                return 0
-        
-        if not processed_chunks:
-            logger.error("No processed chunks to add to database")
+    def build_vector_database(self, force_rebuild: bool = False) -> int:
+        """Builds the vector database with rich metadata."""
+        collection = self.client.get_or_create_collection(self.collection_name)
+        if collection.count() > 0 and not force_rebuild:
+            logger.info(f"Database has {collection.count()} docs. Use --force to rebuild.")
+            return 0
+            
+        if force_rebuild: self.reset_database()
+        collection = self.client.get_or_create_collection(self.collection_name)
+
+        try:
+            with open(settings.scraped_data_file, 'r', encoding='utf-8') as f:
+                scraped_data = json.load(f)
+            processed_chunks = self.process_scraped_data(scraped_data)
+        except FileNotFoundError:
+            logger.error(f"Scraped data file not found at {settings.scraped_data_file}.")
             return 0
         
-        # Prepare data for ChromaDB
-        documents = []
-        metadatas = []
-        ids = []
+        if not processed_chunks: return 0
         
-        for chunk in processed_chunks:
-            documents.append(chunk['content'])
-            metadatas.append({
-                'title': chunk['title'],
-                'url': chunk['url'],
-                'chunk_index': chunk['chunk_index'],
-                'source_type': chunk['source_type']
-            })
-            ids.append(chunk['id'])
+        documents = [chunk['content'] for chunk in processed_chunks]
+        raw_metadatas = [chunk['metadata'] for chunk in processed_chunks]
+        ids = [chunk['id'] for chunk in processed_chunks]
+        metadatas = [{k: v for k, v in meta.items() if v is not None} for meta in raw_metadatas]
         
-        # Add to collection in batches
-        batch_size = 100
+        batch_size = 128
         total_added = 0
-        
         for i in range(0, len(documents), batch_size):
-            batch_docs = documents[i:i + batch_size]
-            batch_metas = metadatas[i:i + batch_size]
-            batch_ids = ids[i:i + batch_size]
-            
             try:
-                self.collection.add(
-                    documents=batch_docs,
-                    metadatas=batch_metas,
-                    ids=batch_ids
+                collection.add(
+                    ids=ids[i:i + batch_size],
+                    documents=documents[i:i + batch_size],
+                    metadatas=metadatas[i:i + batch_size]
                 )
-                total_added += len(batch_docs)
-                logger.info(f"Added batch {i//batch_size + 1}, total: {total_added}")
-                
+                total_added += len(ids[i:i + batch_size])
+                logger.info(f"Added batch {i//batch_size + 1}, total docs: {total_added}/{len(documents)}")
             except Exception as e:
-                logger.error(f"Error adding batch {i//batch_size + 1}: {str(e)}")
-                continue
+                logger.error(f"Error adding batch {i//batch_size + 1}: {e}", exc_info=True)
         
-        logger.info(f"Successfully added {total_added} chunks to vector database")
+        logger.info(f"Successfully added {total_added} chunks to DB.")
         return total_added
     
     def search(self, query: str, n_results: int = 5, filter_dict: Optional[Dict] = None) -> List[Dict]:
-        """Search the knowledge base for relevant content."""
+        """Searches the knowledge base, ensuring a fresh collection object is used."""
         try:
-            results = self.collection.query(
-                query_texts=[query],
-                n_results=n_results,
-                where=filter_dict
+            # FIX: Re-fetch the collection object to avoid stale references after reloads.
+            collection = self.client.get_collection(name=self.collection_name)
+            
+            results = collection.query(
+                query_texts=[query], n_results=n_results, where=filter_dict
             )
             
-            # Format results
             formatted_results = []
-            if results['documents'] and results['documents'][0]:
+            if results['documents']:
                 for i, doc in enumerate(results['documents'][0]):
-                    result = {
-                        'content': doc,
-                        'metadata': results['metadatas'][0][i],
-                        'distance': results['distances'][0][i] if results.get('distances') else None
-                    }
-                    formatted_results.append(result)
-            
+                    metadata = results['metadatas'][0][i]
+                    if metadata.get('source_type') == 'table' and 'table_json' in metadata:
+                        metadata['table'] = json.loads(metadata['table_json'])
+                        del metadata['table_json']
+                    formatted_results.append({
+                        'content': doc, 'metadata': metadata,
+                        'distance': results['distances'][0][i]
+                    })
             return formatted_results
-            
         except Exception as e:
-            logger.error(f"Error searching knowledge base: {str(e)}")
+            logger.error(f"Error searching KB: {e}", exc_info=True)
             return []
-    
-    def get_context_for_query(self, query: str, max_chunks: int = 3) -> str:
-        """Get relevant context for a query."""
-        search_results = self.search(query, n_results=max_chunks)
-        
-        if not search_results:
-            return "No relevant information found in the knowledge base."
-        
-        context_parts = []
-        for result in search_results:
-            title = result['metadata'].get('title', 'Unknown')
-            content = result['content']
-            context_parts.append(f"From '{title}':\n{content}")
-        
-        return "\n\n---\n\n".join(context_parts)
-    
-    def reset_database(self):
-        """Reset the vector database (use with caution)."""
-        try:
-            self.client.delete_collection("stardew_knowledge")
-            self.collection = self.client.create_collection(
-                name="stardew_knowledge",
-                metadata={"description": "Stardew Valley Wiki knowledge base"}
-            )
-            logger.info("Database reset successfully")
-        except Exception as e:
-            logger.error(f"Error resetting database: {str(e)}")
 
+    def reset_database(self):
+        """Resets the vector database."""
+        logger.info("Resetting ChromaDB collection...")
+        self.client.delete_collection(name=self.collection_name)
+        logger.info("Database reset successfully.")
 
 def main():
-    """Build the vector database from scraped data."""
+    parser = argparse.ArgumentParser(description='Build Stardew Valley RAG KB with rich data.')
+    parser.add_argument('--force', action='store_true', help='Force rebuild of the database.')
+    args = parser.parse_args()
+
     rag_system = StardewRAGSystem()
-    
-    # Check if database already has content
-    try:
-        count = rag_system.collection.count()
-        if count > 0:
-            logger.info(f"Database already contains {count} documents")
-            response = input("Do you want to rebuild? (y/N): ")
-            if response.lower() != 'y':
-                return
-            rag_system.reset_database()
-    except Exception:
-        pass
-    
-    # Build the database
-    chunks_added = rag_system.build_vector_database()
+    chunks_added = rag_system.build_vector_database(force_rebuild=args.force)
     
     if chunks_added > 0:
-        logger.info("Vector database built successfully!")
-        
-        # Test search functionality
-        test_query = "How do I grow crops in Stardew Valley?"
-        results = rag_system.search(test_query, n_results=3)
-        logger.info(f"Test search for '{test_query}' returned {len(results)} results")
+        logger.info(f"DB built successfully! Total docs in collection: {rag_system.client.get_collection(rag_system.collection_name).count()}")
     else:
-        logger.error("Failed to build vector database")
-
+        logger.info("No new chunks were added to the database.")
 
 if __name__ == "__main__":
     main()

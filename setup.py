@@ -132,13 +132,13 @@ def test_agent():
         print("Testing Hints Mode...")
         agent = StardewAgent(mode=AgentMode.HINTS)
         response = agent.chat("How do I start farming?")
-        print(f"✅ Hints mode response: {response[:100]}...")
+        print(f"✅ Hints mode response: {response['text'][:100]}...")
         
         # Test walkthrough mode
         print("Testing Walkthrough Mode...")
         agent.set_mode(AgentMode.WALKTHROUGH)
         response = agent.chat("How do I start farming?")
-        print(f"✅ Walkthrough mode response: {response[:100]}...")
+        print(f"✅ Walkthrough mode response: {response['text'][:100]}...")
         
         return True
         

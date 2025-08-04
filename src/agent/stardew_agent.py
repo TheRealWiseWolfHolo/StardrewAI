@@ -1,13 +1,14 @@
-"""LangChain agent for Stardew Valley assistance with Hints and Walkthrough modes."""
+"""LangChain agent for Stardew Valley assistance with rich content handling."""
 
 import logging
+import json
 from enum import Enum
 from typing import Dict, List, Optional
 
 from langchain.agents import AgentExecutor, create_openai_functions_agent
 from langchain.memory import ConversationBufferWindowMemory
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.schema import BaseMessage, HumanMessage, SystemMessage
+from langchain.schema import BaseMessage
 from langchain.tools import Tool
 from langchain_openai import ChatOpenAI
 
@@ -18,59 +19,38 @@ from src.planner.crop_planner import CropPlanner # Add this import
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 class AgentMode(Enum):
-    """Agent operation modes."""
     HINTS = "hints"
     WALKTHROUGH = "walkthrough"
 
-
 class StardewAgent:
-    """AI agent for Stardew Valley assistance with configurable response modes."""
+    """AI agent for Stardew Valley, supporting structured data responses."""
     
     def __init__(self, mode: AgentMode = AgentMode.HINTS):
         self.mode = mode
         self.rag_system = StardewRAGSystem()
         self.crop_planner = CropPlanner(self.rag_system) # Instantiate CropPlanner
 
-        # Initialize OpenAI LLM
         self.llm = ChatOpenAI(
             model=settings.openai_model,
-            temperature=0.7,
-            max_tokens=settings.max_response_length,
+            temperature=0.6,
             openai_api_key=settings.openai_api_key
         )
         
-        # Initialize memory
         self.memory = ConversationBufferWindowMemory(
-            k=5,  # Remember last 5 exchanges
-            return_messages=True,
-            memory_key="chat_history"
+            k=5, return_messages=True, memory_key="chat_history"
         )
         
-        # Create tools
         self.tools = self._create_tools()
-        
-        # Create agent
-        self.agent = self._create_agent()
-        
-        # Create agent executor
-        self.agent_executor = AgentExecutor(
-            agent=self.agent,
-            tools=self.tools,
-            memory=self.memory,
-            verbose=True,
-            max_iterations=3,
-            early_stopping_method="generate"
-        )
+        self.agent_executor = self._create_agent_executor()
     
     def _create_tools(self) -> List[Tool]:
-        """Create tools for the agent."""
-        tools = [
+        """Creates tools that can return structured data."""
+        return [
             Tool(
                 name="search_stardew_knowledge",
-                description="Search the Stardew Valley knowledge base for information about gameplay, items, characters, or strategies.",
-                func=self._search_knowledge_tool
+                description="Search for general information. Returns text, and potentially an image or a data table.",
+                func=self.search_knowledge_tool
             ),
             Tool(
                 name="get_specific_info",

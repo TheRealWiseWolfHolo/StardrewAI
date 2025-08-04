@@ -1,35 +1,3 @@
-# Core dependencies
-langchain
-langchain-community
-langchain-openai
-openai
-
-# Vector database and embeddings
-chromadb
-sentence-transformers
-
-# Web scraping
-beautifulsoup4
-requests
-scrapy
-
-# Data processing
-pandas
+# Core dependencies for the project
 numpy
 
-# Web framework
-fastapi
-uvicorn
-jinja2
-python-multipart
-
-# Environment and configuration
-python-dotenv
-pydantic
-pydantic-settings
-
-# Development tools
-black
-ruff
-pytest
-pytest-asyncio
