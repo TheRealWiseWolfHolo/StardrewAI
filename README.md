@@ -62,10 +62,6 @@ StardrewAI/
     python -m src.rag.knowledge_base --force
     ```
 
-5. **Start the Server**:
-   ```bash
-   uvicorn src.api.main:app --port 8001
-   ```
 5.  **Start the Server**:
     ```bash
     uvicorn src.api.main:app --port 8001 --reload
@@ -79,7 +75,6 @@ The agent supports various configurations:
 - **Response Style**: Adjust hint level vs detailed explanations
 - **Game Knowledge**: Focus on specific aspects (farming, mining, relationships, etc.)
 - **Spoiler Control**: Prevent revealing late-game content
-6.  **Open your browser** to `http://localhost:8001`
 
 ## Development
 

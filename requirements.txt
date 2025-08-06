@@ -1,3 +1,19 @@
 # Core dependencies for the project
 numpy
 
+# Web framework
+fastapi
+uvicorn
+jinja2
+python-multipart
+
+# Environment and configuration
+python-dotenv
+pydantic
+pydantic-settings
+
+# Development tools
+black
+ruff
+pytest
+pytest-asyncio
