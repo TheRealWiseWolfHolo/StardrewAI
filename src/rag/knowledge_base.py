@@ -137,6 +137,44 @@ class StardewRAGSystem:
         logger.info(f"Successfully added {total_added} chunks to DB.")
         return total_added
     
+    def get_context_for_query(self, query: str, n_results: int = 3) -> str:
+        """
+        Fetches the most relevant context for a given query from the vector database.
+        It combines the content of the top search results into a single string.
+        """
+        logger.info(f"Fetching context for query: '{query}'")
+        search_results = self.search(query, n_results=n_results)
+        
+        if not search_results:
+            return "No relevant information found."
+        
+        context_parts = []
+        for result in search_results:
+            context_parts.append(result['content'])
+        
+        return "\n\n".join(context_parts)
+
+    def get_hint_for_query(self, query: str) -> str:
+        """
+        Provides a brief, high-level hint for a query, intentionally vague.
+        """
+        logger.info(f"Fetching a hint for query: '{query}'")
+        search_results = self.search(query, n_results=1)  # Fetch only the top result
+        
+        if not search_results:
+            return "I'm not sure about that. Try rephrasing your question."
+            
+        top_result = search_results[0]['content']
+        
+        # Create a very short, high-level summary as a hint
+        hint = f"Have you considered looking into topics related to '{query}'? The answer might be found there."
+        
+        # If the result is short, just give a vague pointer
+        if len(top_result) < 200:
+            return f"I found a small clue related to '{query}'. It might be worth investigating."
+        
+        return hint
+
     def search(self, query: str, n_results: int = 5, filter_dict: Optional[Dict] = None) -> List[Dict]:
         """Searches the knowledge base, ensuring a fresh collection object is used."""
         try:
