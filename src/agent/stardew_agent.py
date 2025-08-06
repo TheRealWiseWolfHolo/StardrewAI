@@ -45,24 +45,37 @@ class StardewAgent:
         self.agent_executor = self._create_agent_executor()
     
     def _create_tools(self) -> List[Tool]:
-        """Creates tools that can return structured data."""
-        return [
-            Tool(
-                name="search_stardew_knowledge",
-                description="Search for general information. Returns text, and potentially an image or a data table.",
-                func=self._search_knowledge_tool
-            ),
-            Tool(
-                name="get_specific_info",
-                description="Get detailed information about a specific topic in Stardew Valley (crops, animals, characters, locations, etc.).",
-                func=self._get_specific_info_tool
-            ),
-            Tool(
-                name="plan_crop_farming",
-                description="Plan a crop farming strategy, including land size, seeds, fertilizer, and startup funds for a target yield of a specific crop in a given season. Input should be a string like 'crop_name, target_yield, season'.",
-                func=self._plan_crop_tool
-            )
-        ]
+        """Creates tools based on the agent's mode."""
+        if self.mode == AgentMode.HINTS:
+            return [
+                Tool(
+                    name="get_hint",
+                    description="Get a subtle hint for a specific question about Stardew Valley.",
+                    func=self._get_hint_tool
+                )
+            ]
+        else:  # WALKTHROUGH mode
+            return [
+                Tool(
+                    name="search_stardew_knowledge",
+                    description="Search for general information. Returns text, and potentially an image or a data table.",
+                    func=self._search_knowledge_tool
+                ),
+                Tool(
+                    name="get_specific_info",
+                    description="Get detailed information about a specific topic (e.g., crops, animals, characters).",
+                    func=self._get_specific_info_tool
+                ),
+                Tool(
+                    name="plan_crop_farming",
+                    description="Plan a crop farming strategy. Input: 'crop_name, target_yield, season'.",
+                    func=self._plan_crop_tool
+                )
+            ]
+
+    def _get_hint_tool(self, query: str) -> str:
+        """Helper to get a hint from the RAG system."""
+        return self.rag_system.get_hint_for_query(query)
 
     def _search_knowledge_tool(self, query: str) -> str:
         """Helper to search knowledge base."""
@@ -96,42 +109,39 @@ class StardewAgent:
             
     def _get_system_prompt(self):
         """Returns the appropriate system prompt based on the agent's mode."""
-        walkthrough_prompt = """You are a master Stardew Valley strategist. Your goal is to provide comprehensive, step-by-step guides, **always tailored to the player's current situation.**
+        walkthrough_prompt = """You are a comprehensive Stardew Valley guide that provides DETAILED WALKTHROUGHS and COMPLETE SOLUTIONS.
 
-**Player Context:**
-- You will be given the player's current Year, Season, and Day.
-- **THIS IS CRITICAL:** Use this information to make your advice timely and relevant. For example, do not suggest planting Spring crops in Fall. Check birthdays, festivals, or villager schedules based on the current date.
+Your role:
+- Provide step-by-step instructions
+- Give complete and detailed explanations
+- Include all relevant information and context
+- Be thorough and systematic in your responses
+- Help players achieve their goals efficiently
 
-**Conversation Context:**
-- Pay close attention to the `chat_history`. It contains previous turns of the conversation.
-- Use this history to understand follow-up questions and resolve pronouns (e.g., if the user asks about "Leah" and then asks "where does she live?", you MUST know "she" is Leah).
+Guidelines:
+- Provide comprehensive answers with specific steps
+- Include relevant numbers, timings, and requirements
+- Give complete item lists and resource requirements
+- Explain the reasoning behind strategies
+- Cover multiple approaches when applicable
 
-**Reasoning Process:**
-1.  **Analyze Query & Context:** Analyze the user's question, their game status, and the chat history.
-2.  **Tool Selection:**
-    *   For crafting recipes, bundle requirements, or step-by-step tasks, **immediately use the `create_checklist` tool**.
-    *   For specific data lookup (like a fish's location), use `get_specific_info`.
-    *   For general questions, use `search_stardew_knowledge`.
-3.  **Synthesize (If Necessary):** If a simple tool call isn't enough (e.g., complex strategy), deconstruct the problem, execute multiple tool calls, and synthesize the results into a cohesive answer.
-
-**Formatting Instructions:**
-- **Use Markdown for all text responses.** This includes headings, subheadings, bulleted lists, and bold text to create a clear and readable response.
-
-**Output Format:**
-- **CRITICAL:** Your final output to the user MUST be a single, valid JSON object.
-- The root of this JSON object must contain the keys 'text', 'image_url', 'table', 'checklist', and 'source_url'.
-- Populate these fields with the information you gather. If a field is not applicable (e.g., no table was found), its value must be `null`.
-- When you use the `create_checklist` tool, place its dictionary output directly into the `checklist` field of the final JSON. Do not wrap it in other keys.
-"""
+When players ask questions, use your tools to gather comprehensive information and provide detailed, actionable guidance."""
         
-        hints_prompt = """You are a friendly Stardew Valley assistant.
+        hints_prompt = """Your role:
+- Give players gentle nudges in the right direction
+- Avoid giving away complete solutions unless specifically asked
+- Keep responses concise and encouraging
+- Let players discover and learn on their own
+- Use phrases like "You might want to try...", "Consider...", "Have you thought about..."
 
-**Instructions:**
-1.  Use the player's context (Year, Season, Day) to give timely advice.
-2.  Use the `chat_history` to understand follow-up.
-3.  If asked for a recipe or bundle, use the `create_checklist` tool.
-4.  **CRITICAL:** Your final output MUST be a single, valid JSON object with the keys 'text', 'image_url', 'table', 'checklist', and 'source_url'. Inapplicable fields must be `null`.
-"""
+Guidelines:
+- Keep responses under 200 words
+- Focus on one main hint per response
+- Ask follow-up questions to guide discovery
+- Avoid spoilers about late-game content
+- Encourage experimentation and exploration
+
+When players ask questions, use your tools to find relevant information, then present it as a helpful hint rather than a complete answer."""
         
         return walkthrough_prompt if self.mode == AgentMode.WALKTHROUGH else hints_prompt
 
@@ -207,7 +217,7 @@ class StardewAgent:
             except json.JSONDecodeError:
                 structured_output = {"text": output}
 
-            if not structured_output.get("source_url"):
+            if not structured_output.get("source_url") and self.mode != AgentMode.HINTS:
                 logger.info("No source_url in LLM response, finding a fallback.")
                 fallback_results = self.rag_system.search(message, n_results=1)
                 if fallback_results:
