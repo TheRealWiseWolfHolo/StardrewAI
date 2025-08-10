@@ -33,7 +33,7 @@ class StardewAgent:
 
         self.llm = ChatOpenAI(
             model=settings.openai_model,
-            temperature=0.6,
+            temperature=0.3,
             openai_api_key=settings.openai_api_key
         )
         
