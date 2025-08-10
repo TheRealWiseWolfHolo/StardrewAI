@@ -211,3 +211,5 @@ __marimo__/
 data/chroma_db/
 *.log
 .env
+generate_flow_diagram.py
+project_report.tex
