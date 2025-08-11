@@ -1,5 +1,6 @@
 # Core dependencies for the project
 numpy
+openai
 
 # Web framework
 fastapi
@@ -22,5 +23,8 @@ pytest-asyncio
 # LLM
 langchain
 
-# Additional utilities
+# RAG
 bs4
+chromadb
+tiktoken
+sentence-transformers

@@ -73,10 +73,6 @@ class StardewAgent:
                 )
             ]
 
-    def _get_hint_tool(self, query: str) -> str:
-        """Helper to get a hint from the RAG system."""
-        return self.rag_system.get_hint_for_query(query)
-
     def _search_knowledge_tool(self, query: str) -> str:
         """Helper to search knowledge base."""
         return self.rag_system.get_context_for_query(query)
