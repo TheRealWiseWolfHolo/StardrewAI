@@ -185,33 +185,30 @@ def test_agent():
         print(f"Error testing agent: {str(e)}")
         return False
 
-
 def start_server():
-    """Start the web server."""
+    """Start the FastAPI server."""
     print("Starting web server...")
+    print(f"Server will be available at: http://{settings.api_host}:{settings.api_port}")
+    print("Starting server... (Press Ctrl+C to stop)")
     
     try:
         import uvicorn
-        from src.api.main import app
-        
-        print(f"Server will be available at: http://{settings.api_host}:{settings.api_port}")
-        print("Starting server... (Press Ctrl+C to stop)")
-        
+        # Use import string format instead of app object for reload functionality
         uvicorn.run(
-            app,
+            "src.api.main:app",  # Import string format
             host=settings.api_host,
             port=settings.api_port,
-            reload=settings.debug
+            reload=True,
+            log_level="info"
         )
-        
+    except ImportError:
+        print("uvicorn not installed. Install with: pip install uvicorn")
     except KeyboardInterrupt:
-        print("\nServer stopped")
-    except ImportError as e:
-        print(f"Import error starting server: {str(e)}")
-        print("Make sure all dependencies are installed: pip install -r requirements.txt")
+        print("\nServer stopped by user")
     except Exception as e:
         print(f"Error starting server: {str(e)}")
-
+        print("Try running manually with:")
+        print(f"   uvicorn src.api.main:app --host {settings.api_host} --port {settings.api_port} --reload")
 
 def main():
     """Main setup function."""
