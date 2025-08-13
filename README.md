@@ -45,7 +45,7 @@ StardrewAI/
     ```bash
     pip install -r requirements.txt
     ```
-    and then run
+    setup your .env file, include your OPENAI_API_KEY and then run
     ```bash
     python setup.py
     ```
