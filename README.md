@@ -41,6 +41,17 @@ StardrewAI/
 
 ## Quick Start
 
+0.  **One click start**
+    ```bash
+    pip install -r requirements.txt
+    ```
+    and then run
+    ```bash
+    python setup.py
+    ```
+
+    OR you can do the following one step at a time
+
 1.  **Install Dependencies**:
     ```bash
     pip install -r requirements.txt
